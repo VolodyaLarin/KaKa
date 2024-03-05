@@ -52,25 +52,22 @@ public:
         TheModule = std::make_shared<llvm::Module>("main", *TheContext);
     }
 
-    llvm::Type *getType(std::string typeName) {
-        auto typeMap = std::map<std::string, llvm::Type *>{
-                {"int",   llvm::Type::getInt32Ty(*TheContext)},
-                {"float", llvm::Type::getFloatTy(*TheContext)},
-                {"rune",  llvm::Type::getInt32Ty(*TheContext)}
-        };
+    llvm::Type *getType(const std::string &typeName) {
+        auto typeMap = std::map<std::string, llvm::Type *>{{"int",   llvm::Type::getInt32Ty(*TheContext)},
+                                                           {"float", llvm::Type::getFloatTy(*TheContext)},
+                                                           {"rune",  llvm::Type::getInt32Ty(*TheContext)}};
 
         if (typeMap.find(typeName) == typeMap.end()) {
             std::cerr << typeName << " is not supported" << std::endl;
             return nullptr;
         }
 
-
         return typeMap[typeName];
     }
 
     int AMPSERSAND_level = 0;
 
-    std::optional<std::pair<llvm::Type *, llvm::Value *>> FindVarible(std::string varName) {
+    std::optional<std::pair<llvm::Type *, llvm::Value *>> FindVarible(const std::string &varName) {
         for (auto block = Stack.rbegin(); block != Stack.rend(); block++) {
             if (block->second.find(varName) != block->second.end()) {
                 return block->second[varName];
@@ -86,18 +83,18 @@ class ParserVisitor : public GoParserBaseVisitor {
 
 public:
     void GenereateBuildins() {
-        std::vector<std::pair<std::string, std::pair<llvm::Type *, std::vector<llvm::Type *>>>> functions = {
-                {"printf", {llvm::Type::getInt32Ty(*context->TheContext), {
-                                                                                  llvm::Type::getInt8PtrTy(
-                                                                                          *context->TheContext)
-                                                                          }}},
-                {"scanf",  {llvm::Type::getInt32Ty(*context->TheContext), {
-                                                                                  llvm::Type::getInt8PtrTy(
-                                                                                          *context->TheContext)
-                                                                          }}},
-        };
+        std::vector<std::pair<std::string, std::pair<llvm::Type *, std::vector<llvm::Type *>>>> functions =
+                {{"printf", {
+                                    llvm::Type::getInt32Ty(*context->TheContext),
+                                    {llvm::Type::getInt8PtrTy(
+                                            *context->TheContext)}}},
+                 {"scanf",  {
+                                    llvm::Type::getInt32Ty(*context->TheContext),
+                                    {llvm::Type::getInt8PtrTy(
+                                            *context->TheContext)}}},
+                };
 
-        for (auto func: functions) {
+        for (const auto &func: functions) {
             auto args = func.second.second;
             auto name = func.first;
             auto rt = func.second.first;
@@ -115,14 +112,13 @@ public:
     };
 
     antlrcpp::Any visitSourceFile(GoParser::SourceFileContext *ctx) override {
-
         this->context->ModuleName = ctx->packageClause()->IDENTIFIER()->getText();
 
 
         GenereateBuildins();
 
         for (auto importDecl: ctx->importDecl()) {
-//            ignore imports
+            // @todo: implement imports
         }
 
         for (auto funcDecl: ctx->functionDecl()) {
@@ -133,11 +129,14 @@ public:
     }
 
     antlrcpp::Any visitFunctionDecl(GoParser::FunctionDeclContext *ctx) override {
-
         std::vector<llvm::Type *> args;
 
         for (auto arg: ctx->signature()->parameters()->parameterDecl()) {
             auto llvmType = context->getType(arg->type_()->getText());
+            if (!llvmType) {
+                std::cerr << "Can't find type : " << ctx->getText() << std::endl;
+                return nullptr;
+            }
             for (auto argN: arg->identifierList()->IDENTIFIER()) {
                 args.emplace_back(llvmType);
             }
@@ -190,7 +189,6 @@ public:
 
         llvm::verifyFunction(*func);
 
-
         context->Stack.pop_back();
 
         return 0;
@@ -215,6 +213,7 @@ public:
         } else if (ctx->DECIMAL_LIT()) {
             value = atoi(ctx->getText().c_str());
         }
+        // @todo: support other types
 
         llvm::Value *retv = llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, value));
 
@@ -235,15 +234,13 @@ public:
 
         data.pop_back();
 
-        auto str = llvm::ConstantDataArray::getString(
-                *context->TheContext, data.c_str() + 1, true
-        );
+        auto str = llvm::ConstantDataArray::getString(*context->TheContext, data.c_str() + 1, true);
 
         auto at = llvm::ArrayType::get(llvm::Type::getInt8Ty(*context->TheContext), data.size());
 
 
-        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first,
-                               context->Stack.rbegin()->first->begin());
+        // @todo: alloca from jopa
+        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
 
 
         auto llvmVar = TmpB.CreateAlloca(at);
@@ -256,18 +253,18 @@ public:
     }
 
     antlrcpp::Any visitConstDecl(GoParser::ConstDeclContext *ctx) override {
+        // @todo support multiple declaration
+        // @todo: compute type
         auto typeName = ctx->constSpec()[0]->type_()->getText();
 
         auto llvmType = context->getType(typeName);
         if (!llvmType) {
+            std::cerr << "Can't find type : " << ctx->getText() << std::endl;
             return nullptr;
         }
 
         std::string name = ctx->constSpec()[0]->identifierList()->IDENTIFIER(0)->getText();
-
-        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first,
-                               context->Stack.rbegin()->first->begin());
-
+        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
 
         auto llvmVar = TmpB.CreateAlloca(llvmType);
         llvmVar->setName(name);
@@ -286,17 +283,18 @@ public:
 
 
     antlrcpp::Any visitVarDecl(GoParser::VarDeclContext *ctx) override {
+        // @todo support multiple declaration
         auto typeName = ctx->varSpec()[0]->type_()->getText();
 
         auto llvmType = context->getType(typeName);
         if (!llvmType) {
+            std::cerr << "Can't find type : " << ctx->getText() << std::endl;
             return nullptr;
         }
 
         std::string name = ctx->varSpec()[0]->identifierList()->IDENTIFIER(0)->getText();
 
-        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first,
-                               context->Stack.rbegin()->first->begin());
+        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
 
 
         auto llvmVar = TmpB.CreateAlloca(llvmType);
@@ -322,25 +320,18 @@ public:
             auto func = context->Functions[context->GetFunctionID(function_name)];
 
             if (!func) {
-                std::cerr << "not found function " << function_name << std::endl;
+                std::cerr << "not found function " << function_name << " : " << ctx->getText() << std::endl;
                 return nullptr;
             }
 
             std::vector<llvm::Value *> ArgsV;
 
             for (auto expr: ctx->arguments()->expressionList()->expression()) {
-                std::cout << expr->toStringTree() << std::endl;
-
                 llvm::Value *value = expr->accept(this);
-
-                value->print(llvm::errs());
-
                 ArgsV.emplace_back(value);
             }
 
             return context->Builder->CreateCall(func, ArgsV);
-
-
         }
 
         return GoParserBaseVisitor::visitPrimaryExpr(ctx);
@@ -354,7 +345,7 @@ public:
         auto value = context->FindVarible(varName);
 
         if (!value) {
-            std::cerr << "Not found var name " << varName << std::endl;
+            std::cerr << "Not found var name " << varName << " : " << ctx->getText() << std::endl;
             return nullptr;
         }
 
@@ -406,12 +397,15 @@ public:
             if (ctx->EQUALS()) {
                 return context->Builder->CreateICmpEQ(L, R);
             }
+            // @todo add other ops
         } else if (ctx->AMPERSAND()) {
+            // @todo: remove kostyl'
 
+            auto init_l = context->AMPSERSAND_level;
             context->AMPSERSAND_level++;
             auto child = ctx->expression(0)->accept(this);
 
-            if (context->AMPSERSAND_level) {
+            if (context->AMPSERSAND_level != init_l) {
                 std::cerr << "Can't get pointer (&):" << ctx->getText() << std::endl;
             }
             return child;
@@ -421,26 +415,17 @@ public:
     }
 
     antlrcpp::Any visitIfStmt(GoParser::IfStmtContext *ctx) override {
-        auto condition = ctx->expression()->primaryExpr()->operand()->expression()->accept(this);
-
-        auto CondV = condition;
-
-
+        auto CondV = ctx->expression()->primaryExpr()->operand()->expression()->accept(this);
         auto parent = context->Stack.rbegin()->first->getParent();
 
-
-        // Create blocks for the then and else cases.  Insert the 'then' block at the
-        // end of the function.
-        auto ThenBB = llvm::BasicBlock::Create(*context->TheContext, "if-then", parent);
+        auto ThenBB = llvm::BasicBlock::Create(*context->TheContext, "if", parent);
         auto ElseBB = llvm::BasicBlock::Create(*context->TheContext, "else");
-        auto MergeBB = llvm::BasicBlock::Create(*context->TheContext, "ifcont");
+        auto MergeBB = llvm::BasicBlock::Create(*context->TheContext, "after-if");
 
         context->Builder->CreateCondBr(CondV, ThenBB, ElseBB);
-
         context->Builder->SetInsertPoint(ThenBB);
 
         ctx->block(0)->statementList()->accept(this);
-
         context->Builder->CreateBr(MergeBB);
 
         parent->insert(parent->end(), ElseBB);
@@ -459,8 +444,7 @@ public:
         parent->insert(parent->end(), MergeBB);
         context->Builder->SetInsertPoint(MergeBB);
 
-        return MergeBB;
-
+        return nullptr;
     }
 
     antlrcpp::Any visitForStmt(GoParser::ForStmtContext *ctx) override {
@@ -472,8 +456,7 @@ public:
         if (!StartCond)
             return nullptr;
         auto LoopBB = llvm::BasicBlock::Create(*context->TheContext, "loop", TheFunction);
-        auto AfterBB =
-                llvm::BasicBlock::Create(*context->TheContext, "afterloop", TheFunction);
+        auto AfterBB = llvm::BasicBlock::Create(*context->TheContext, "afterloop", TheFunction);
 
         context->Builder->CreateCondBr(StartCond, LoopBB, AfterBB);
 

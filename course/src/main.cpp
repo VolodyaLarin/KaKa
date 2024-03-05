@@ -13,36 +13,41 @@ void print_tree(antlr4::tree::ParseTree *tree) {
 }
 
 
-
 using namespace std;
 using namespace antlr4;
-int main(int argc, const char* argv[]) {
-    std::ifstream stream;
-    stream.open("./file.go");
 
-    ANTLRInputStream input(stream);
-    GoLexer lexer(&input);
-    CommonTokenStream tokens(&lexer);
-    GoParser parser(&tokens);
-    GoParser::SourceFileContext* tree = parser.sourceFile();
-    std::cout << tree->toStringTree(true) << std::endl;
+int main(int argc, const char *argv[]) {
 
-    ParserVisitor visitor;
+    if (argc < 2) {
+        std::cerr << "No file name" << std::endl;
+        return -1;
+    }
 
-    visitor.visitSourceFile(tree);
+    for (size_t i = 1; i < argc; i++) {
+        std::ifstream stream;
+        stream.open(argv[i]);
+        ANTLRInputStream input(stream);
+        GoLexer lexer(&input);
+        CommonTokenStream tokens(&lexer);
 
-    std::cerr<<"\n";
-    std::cerr<<"\n";
-    std::cerr<<"\n";
-
-
-    visitor.context->TheModule->print(llvm::errs(), nullptr);
+        GoParser parser(&tokens);
+        GoParser::SourceFileContext *tree = parser.sourceFile();
 
 
-    std::error_code err;
+        ParserVisitor visitor;
+        visitor.visitSourceFile(tree);
 
-    auto os = llvm::raw_fd_ostream("./file.ll", err);
-    visitor.context->TheModule->print(os, nullptr);
+        std::string newfilename = argv[i];
+        newfilename += ".ll";
 
+        std::error_code err;
+        auto os = llvm::raw_fd_ostream(newfilename, err);
+        visitor.context->TheModule->print(os, nullptr);
+
+        if (err) {
+            return err.value();
+        }
+
+    }
     return 0;
 }
