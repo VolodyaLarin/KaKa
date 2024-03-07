@@ -413,7 +413,7 @@ conversion
 
 operand
     : literal
-    | operandName typeArgs?
+    | operandName // typeArgs?
     | L_PAREN expression R_PAREN
     ;
 

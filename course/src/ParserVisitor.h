@@ -52,6 +52,40 @@ public:
         TheModule = std::make_shared<llvm::Module>("main", *TheContext);
     }
 
+    llvm::Type *GetType(GoParser::Type_Context *typeContext) {
+        if (typeContext->typeName()) {
+            auto typeName = typeContext->typeName()->getText();
+            return getType(typeName);
+        }
+        if (typeContext->type_()) {
+            return GetType(typeContext->type_());
+        }
+
+        if (!typeContext->typeLit()) {
+            std::cerr << "Smth go wrong :" << typeContext->getText() << std::endl;
+            return nullptr;
+        }
+
+        if (typeContext->typeLit()->arrayType()) {
+            auto child = typeContext->typeLit()->arrayType()->elementType()->type_();
+            auto childType = GetType(child);
+            if (!childType) {
+                return nullptr;
+            }
+            auto countText = typeContext->typeLit()->arrayType()->arrayLength()->getText();
+            auto count = atoi(countText.c_str());
+
+            if (count <= 0) {
+                std::cerr << "Can't create array with length " << count << ": " << typeContext->getText();
+                return nullptr;
+            }
+
+            auto at = llvm::ArrayType::get(childType, count);
+
+            return at;
+        }
+    }
+
     llvm::Type *getType(const std::string &typeName) {
         auto typeMap = std::map<std::string, llvm::Type *>{{"int",   llvm::Type::getInt32Ty(*TheContext)},
                                                            {"float", llvm::Type::getFloatTy(*TheContext)},
@@ -255,9 +289,8 @@ public:
     antlrcpp::Any visitConstDecl(GoParser::ConstDeclContext *ctx) override {
         // @todo support multiple declaration
         // @todo: compute type
-        auto typeName = ctx->constSpec()[0]->type_()->getText();
-
-        auto llvmType = context->getType(typeName);
+        auto typeNode = ctx->constSpec()[0]->type_();
+        auto llvmType = context->GetType(typeNode);
         if (!llvmType) {
             std::cerr << "Can't find type : " << ctx->getText() << std::endl;
             return nullptr;
@@ -284,9 +317,8 @@ public:
 
     antlrcpp::Any visitVarDecl(GoParser::VarDeclContext *ctx) override {
         // @todo support multiple declaration
-        auto typeName = ctx->varSpec()[0]->type_()->getText();
-
-        auto llvmType = context->getType(typeName);
+        auto typeNode = ctx->varSpec()[0]->type_();
+        auto llvmType = context->GetType(typeNode);
         if (!llvmType) {
             std::cerr << "Can't find type : " << ctx->getText() << std::endl;
             return nullptr;
@@ -304,6 +336,9 @@ public:
         context->Stack.rbegin()->second[ctx->varSpec(0)->identifierList()->IDENTIFIER(0)->getText()] = std::make_pair(
                 llvmType, llvmVar);
 
+        if (!ctx->varSpec(0)->expressionList()) {
+            return nullptr;
+        }
 
         llvm::Value *expr = ctx->varSpec(0)->expressionList()->expression(0)->accept(this);
 
@@ -327,11 +362,40 @@ public:
             std::vector<llvm::Value *> ArgsV;
 
             for (auto expr: ctx->arguments()->expressionList()->expression()) {
+                std::cout << expr->getText() << std::endl;
                 llvm::Value *value = expr->accept(this);
                 ArgsV.emplace_back(value);
             }
 
             return context->Builder->CreateCall(func, ArgsV);
+        }
+
+        if (ctx->index()) {
+            context->AMPSERSAND_level++;
+
+            llvm::Value *left = ctx->primaryExpr()->accept(this);
+            auto old_level = context->AMPSERSAND_level;
+            context->AMPSERSAND_level = 0;
+            llvm::Value *indexV = ctx->index()->expression()->accept(this);
+            context->AMPSERSAND_level = old_level;
+
+            std::vector<llvm::Value *> indexes = {
+                    llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, 0)), indexV
+            };
+
+            llvm::AllocaInst *aa = static_cast<llvm::AllocaInst *>(left);
+
+            context->TheModule->print(llvm::errs(), nullptr);
+
+            auto valptr = context->Builder->CreateGEP(aa->getAllocatedType(), left, indexes);
+            if (context->AMPSERSAND_level) {
+                context->AMPSERSAND_level--;
+                return valptr;
+            }
+
+            return (llvm::Value *) context->Builder->CreateLoad(aa->getAllocatedType()->getArrayElementType(), valptr);
+
+            return (llvm::Value *) llvm::ExtractElementInst::Create(left, indexV);
         }
 
         return GoParserBaseVisitor::visitPrimaryExpr(ctx);
@@ -360,19 +424,16 @@ public:
     }
 
     antlrcpp::Any visitAssignment(GoParser::AssignmentContext *ctx) override {
-        auto varname = ctx->expressionList(0)->getText();
+        auto varNode = ctx->expressionList(0)->expression(0);
 
-        auto var = context->FindVarible(varname);
+        context->AMPSERSAND_level++;
 
-        if (!var) {
-            std::cerr << "Not found var name " << varname << " : " << ctx->getText() << std::endl;
-            return nullptr;
-        }
+        llvm::Value *lexpr = varNode->accept(this);
 
         llvm::Value *expr = ctx->expressionList(1)->accept(this);
 
 
-        context->Builder->CreateStore(expr, var->second);
+        context->Builder->CreateStore(expr, lexpr);
 
         return nullptr;
     }
@@ -415,7 +476,7 @@ public:
     }
 
     antlrcpp::Any visitIfStmt(GoParser::IfStmtContext *ctx) override {
-        auto CondV = ctx->expression()->primaryExpr()->operand()->expression()->accept(this);
+        auto CondV = ctx->expression()->accept(this);
         auto parent = context->Stack.rbegin()->first->getParent();
 
         auto ThenBB = llvm::BasicBlock::Create(*context->TheContext, "if", parent);
