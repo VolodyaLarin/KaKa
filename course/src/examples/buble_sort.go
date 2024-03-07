@@ -1,7 +1,7 @@
 package main
 
 func main() {
-	var size int = 5
+	const size int = 5
 	var a [5]int
 
 	var i int = 0
