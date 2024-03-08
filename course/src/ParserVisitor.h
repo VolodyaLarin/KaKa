@@ -26,15 +26,18 @@
 #include <regex>
 
 #include <boost/algorithm/string/replace.hpp>
-#include <utility>
 #include "./parser/GoParserBaseVisitor.h"
 
 
 class TypeWrapper {
     llvm::Type *Type;
-    std::string Name;
+//    THERE SOME SHIT WITH CONSTRUCTORS
+    std::shared_ptr<std::string> Name;
+//    std::string Name;
 public:
-    explicit TypeWrapper(llvm::Type *type, std::string name) : Type(type), Name(name) {}
+    explicit TypeWrapper(llvm::Type *type, std::string name) : Type(type) {
+        Name = std::make_shared<std::string>(name);
+    }
 
     llvm::Type *getType() const {
         return Type;
@@ -43,21 +46,21 @@ public:
     TypeWrapper getArrayElementType() {
         return TypeWrapper(
                 Type->getArrayElementType(),
-                "!" + Name
+                "!" + *Name
         );
     }
 
     TypeWrapper getPointerTo() {
         return TypeWrapper(
                 Type->getPointerTo(),
-                "&" + Name
+                "&" + *Name
         );
     }
 
     TypeWrapper getArrayOf(size_t count) {
         return TypeWrapper(
                 llvm::ArrayType::get(Type, count),
-                "[" + std::to_string(count) + "]" + Name
+                "[" + std::to_string(count) + "]" + *Name
         );
     }
 
