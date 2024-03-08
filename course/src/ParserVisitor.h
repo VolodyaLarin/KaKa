@@ -241,7 +241,7 @@ public:
         std::vector<llvm::Type *> args;
 
         for (auto arg: ctx->signature()->parameters()->parameterDecl()) {
-            auto llvmType = context->getType(arg->type_()->getText());
+            auto llvmType = context->GetType(arg->type_());
             if (!llvmType) {
                 std::cerr << "Can't find type : " << ctx->getText() << std::endl;
                 return nullptr;
@@ -251,8 +251,25 @@ public:
             }
         }
 
+        auto retType = llvm::Type::getVoidTy(*context->TheContext);
+        bool isVoid = true;
 
-        llvm::FunctionType *type = llvm::FunctionType::get(llvm::Type::getVoidTy(*context->TheContext), args, false);
+        if (ctx->signature()->result()) {
+            auto goType = ctx->signature()->result()->type_();
+            if (!goType) {
+                std::cerr << "Not supported multiple return: " << ctx->signature()->getText() << std::endl;
+                return nullptr;
+            }
+            auto llvmType = context->GetType(goType);
+            if (!llvmType) {
+                std::cerr << "Can't find type : " << ctx->getText() << std::endl;
+                return nullptr;
+            }
+            retType = llvmType;
+            isVoid = false;
+        }
+
+        llvm::FunctionType *type = llvm::FunctionType::get(retType, args, false);
 
 
         auto name = context->GetFunctionID(ctx->IDENTIFIER()->getText());
@@ -296,7 +313,7 @@ public:
             statement->accept(this);
         }
 
-        context->Builder->CreateRetVoid();
+        if (isVoid) context->Builder->CreateRetVoid();
 
         llvm::verifyFunction(*func);
 
@@ -384,6 +401,24 @@ public:
         return nullptr;
     }
 
+    antlrcpp::Any visitReturnStmt(GoParser::ReturnStmtContext *ctx) override {
+        if (!ctx->expressionList()->expression().size()) {
+            context->Builder->CreateRetVoid();
+            return nullptr;
+        }
+        if (ctx->expressionList()->expression().size() > 1) {
+            std::cerr << "Multiple return is not supported: " << ctx->getText() << std::endl;
+            return nullptr;
+        }
+
+        ValueWrapper expression = ctx->expressionList()->expression(0)->accept(this);
+        expression = expression.toRHS(*context->Builder);
+
+        context->Builder->CreateRet(expression.getValue());
+
+        return nullptr;
+    }
+
 
     antlrcpp::Any visitVarDecl(GoParser::VarDeclContext *ctx) override {
         // @todo support multiple declaration
@@ -438,14 +473,20 @@ public:
             std::vector<llvm::Value *> ArgsV;
 
             for (auto expr: ctx->arguments()->expressionList()->expression()) {
-                std::cout << expr->getText() << std::endl;
                 ValueWrapper value = expr->accept(this);
 
                 // @todo make cast
                 ArgsV.emplace_back(value.toRHS(*context->Builder).getValue());
             }
 
-            return context->Builder->CreateCall(func, ArgsV);
+            llvm::Value *value = context->Builder->CreateCall(func, ArgsV);
+
+            return ValueWrapper(
+                    true,
+                    TypeWrapper(value->getType()),
+                    value
+            );
+
         }
 
         if (ctx->index()) {
@@ -457,9 +498,6 @@ public:
                     llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, 0)),
                     indexV.toRHS(*context->Builder).getValue()
             };
-
-
-            context->TheModule->print(llvm::errs(), nullptr);
 
             auto valptr = context->Builder->CreateGEP(left.getType().getType(), left.getValue(), indexes);
 
@@ -524,6 +562,9 @@ public:
             } else if (ctx->EQUALS()) {
                 res = context->Builder->CreateICmpEQ(L.getValue(), R.getValue());
                 type = llvm::Type::getInt1Ty(*context->TheContext);
+            } else if (ctx->NOT_EQUALS()) {
+                res = context->Builder->CreateICmpNE(L.getValue(), R.getValue());
+                type = llvm::Type::getInt1Ty(*context->TheContext);
             } else if (ctx->STAR()) {
                 res = context->Builder->CreateMul(L.getValue(), R.getValue());
             } else if (ctx->DIV()) {
@@ -557,6 +598,47 @@ public:
         }
 
         return GoParserBaseVisitor::visitExpression(ctx);
+    }
+
+    antlrcpp::Any visitShortVarDecl(GoParser::ShortVarDeclContext *ctx) override {
+        std::string name = ctx->identifierList()->IDENTIFIER(0)->getText();
+
+        ValueWrapper expr = ctx->expressionList()->expression(0)->accept(this);
+        expr = expr.toRHS(*context->Builder);
+
+
+        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
+        auto llvmVar = TmpB.CreateAlloca(expr.getType().getType());
+        llvmVar->setName(name);
+
+        if (context->Stack.rbegin()->second.find(name) != context->Stack.rbegin()->second.end()) {
+            std::cerr << "Variable " <<  name << " allready defined: " << ctx->getText() << std::endl;
+
+            auto var = context->Stack.rbegin()->second.find(name)->second.getPointerTo();
+
+            if (!var) {
+                std::cerr << "Variable " <<  name << " allready defined like constant: " << ctx->getText() << std::endl;
+                return nullptr;
+            }
+
+            context->Builder->CreateStore(
+                    expr.getValue(), var->getValue()
+                    );
+
+            return nullptr;
+        } else {
+
+            context->Stack.rbegin()->second.insert(
+                    {name, ValueWrapper(
+                            false,
+                            expr.getType(),
+                            llvmVar
+                    )});
+
+
+            context->Builder->CreateStore(expr.getValue(), llvmVar);
+        }
+        return nullptr;
     }
 
     antlrcpp::Any visitIfStmt(GoParser::IfStmtContext *ctx) override {

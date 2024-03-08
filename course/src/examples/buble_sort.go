@@ -4,17 +4,14 @@ func main() {
 	const size int = 5
 	var a [5]int
 
-	var i int = 0
-	var j int = 0
+  	printf("Введите элементы массива (%d штук): ", size)
 
-	printf("Введите элементы массива (5 штук): ")
-
-	for i = 0; i < size; i = i + 1 {
+	for i := 0; i < size; i = i + 1 {
 		scanf("%d", &a[i])
 	}
 
-	for i = 0; i < size; i = i + 1 {
-		for j = 0; j < size-i-1; j = j + 1 {
+	for i := 0; i < size; i = i + 1 {
+		for j := 0; j < size-i-1; j = j + 1 {
 			if a[j] > a[j+1] {
 				var tmp int = a[j]
 				a[j] = a[j+1]
@@ -23,7 +20,7 @@ func main() {
 		}
 	}
 
-	for i = 0; i < size; i = i + 1 {
+	for i := 0; i < size; i = i + 1 {
 		printf("%d ", a[i])
 	}
 
