@@ -29,14 +29,93 @@
 #include "./parser/GoParserBaseVisitor.h"
 
 
+class TypeWrapper;
+
+struct TypeDetails {
+    struct IntInfo {
+        bool isSigned;
+        size_t bitSize;
+    };
+    struct FloatInfo {
+        size_t bitSize;
+    };
+
+    struct FunctionInfo {
+        bool isVarargs = false;
+        std::shared_ptr<TypeWrapper> retType;
+        std::vector<TypeWrapper> arguments;
+    };
+
+    std::optional<IntInfo> intInfo = {};
+    std::optional<FloatInfo> floatInfo = {};
+    std::optional<FunctionInfo> functionInfo = {};
+
+
+};
+
+
 class TypeWrapper {
+    TypeDetails typeDetails = {};
     llvm::Type *Type;
-//    THERE SOME SHIT WITH CONSTRUCTORS
-    std::shared_ptr<std::string> Name;
-//    std::string Name;
+
+    explicit TypeWrapper(llvm::Type *type) : Type(type) {
+
+    }
+
 public:
-    explicit TypeWrapper(llvm::Type *type, std::string name) : Type(type) {
-        Name = std::make_shared<std::string>(name);
+    const TypeDetails &getTypeDetails() const {
+        return typeDetails;
+    }
+
+    static TypeWrapper GetInt(llvm::LLVMContext &TheContext, bool isSigned, size_t size) {
+        auto ty = TypeWrapper(
+                llvm::Type::getIntNTy(TheContext, size)
+        );
+        ty.typeDetails.intInfo = TypeDetails::IntInfo{
+                isSigned,
+                size
+        };
+        return std::move(ty);
+    }
+
+    static TypeWrapper GetFloat(llvm::LLVMContext &TheContext, bool isLong = true) {
+        auto ty = TypeWrapper(
+                llvm::Type::getDoubleTy(TheContext)
+        );
+        ty.typeDetails.floatInfo = TypeDetails::FloatInfo{
+                64
+        };
+        return std::move(ty);
+    }
+
+    static TypeWrapper GetFunction(
+            llvm::LLVMContext &TheContext,
+            std::optional<TypeWrapper> retType,
+            std::vector<TypeWrapper> arguments,
+            bool isVarArg = false
+    ) {
+        std::vector<llvm::Type *> args = {};
+        for (auto arg: arguments) {
+            args.push_back(arg.getType());
+        }
+
+        llvm::FunctionType *type = llvm::FunctionType::get(
+                retType ? retType->getType() : llvm::Type::getVoidTy(TheContext), args, false);
+
+        auto ty = TypeWrapper(type);
+
+        std::shared_ptr<TypeWrapper> retT = nullptr;
+        if (retType) {
+            retT = std::make_shared<TypeWrapper>(*retType);
+        }
+
+        ty.typeDetails.functionInfo = TypeDetails::FunctionInfo{
+                isVarArg,
+                retT,
+                arguments
+        };
+
+        return std::move(ty);
     }
 
     llvm::Type *getType() const {
@@ -45,43 +124,43 @@ public:
 
     TypeWrapper getArrayElementType() {
         return TypeWrapper(
-                Type->getArrayElementType(),
-                "!" + *Name
+                Type->getArrayElementType()
         );
     }
 
     TypeWrapper getPointerTo() {
         return TypeWrapper(
-                Type->getPointerTo(),
-                "&" + *Name
+                Type->getPointerTo()
+
         );
     }
 
     TypeWrapper getArrayOf(size_t count) {
         return TypeWrapper(
-                llvm::ArrayType::get(Type, count),
-                "[" + std::to_string(count) + "]" + *Name
+                llvm::ArrayType::get(Type, count)
         );
     }
 
     static std::optional<TypeWrapper> GetTypeByName(const std::string &typeName, llvm::LLVMContext &TheContext) {
-        static auto typeMap = std::map<std::string, llvm::Type *>{
-                {"bool",    llvm::Type::getInt1Ty(TheContext)},
-                {"int",     llvm::Type::getInt32Ty(TheContext)},
-                {"int8",    llvm::Type::getInt8Ty(TheContext)},
-                {"int16",   llvm::Type::getInt16Ty(TheContext)},
-                {"int32",   llvm::Type::getInt32Ty(TheContext)},
-                {"int64",   llvm::Type::getInt64Ty(TheContext)},
-                {"uint",    llvm::Type::getInt32Ty(TheContext)},
-                {"uint8",   llvm::Type::getInt8Ty(TheContext)},
-                {"uint16",  llvm::Type::getInt16Ty(TheContext)},
-                {"uint32",  llvm::Type::getInt32Ty(TheContext)},
-                {"uint64",  llvm::Type::getInt64Ty(TheContext)},
-                {"byte",    llvm::Type::getInt8Ty(TheContext)},
-                {"float32", llvm::Type::getFloatTy(TheContext)},
-                {"float64", llvm::Type::getDoubleTy(TheContext)},
-                {"rune",    llvm::Type::getInt8Ty(TheContext)},
-                {"string",  llvm::Type::getInt8PtrTy(TheContext)},
+        size_t standartIntSize = 32;
+
+        static auto typeMap = std::map<std::string, TypeWrapper>{
+                {"bool",    TypeWrapper::GetInt(TheContext, false, 1)},
+                {"int",     TypeWrapper::GetInt(TheContext, true, standartIntSize)},
+                {"int8",    TypeWrapper::GetInt(TheContext, true, 8)},
+                {"int16",   TypeWrapper::GetInt(TheContext, true, 16)},
+                {"int32",   TypeWrapper::GetInt(TheContext, true, 32)},
+                {"int64",   TypeWrapper::GetInt(TheContext, true, 64)},
+                {"uint",    TypeWrapper::GetInt(TheContext, false, standartIntSize)},
+                {"uint8",   TypeWrapper::GetInt(TheContext, false, 8)},
+                {"uint16",  TypeWrapper::GetInt(TheContext, false, 16)},
+                {"uint32",  TypeWrapper::GetInt(TheContext, false, 32)},
+                {"uint64",  TypeWrapper::GetInt(TheContext, false, 64)},
+                {"byte",    TypeWrapper::GetInt(TheContext, false, 8)},
+                {"float32", TypeWrapper::GetFloat(TheContext, false)},
+                {"float64", TypeWrapper::GetFloat(TheContext, true)},
+                {"rune",    TypeWrapper::GetInt(TheContext, false, 8)},
+                {"string",  TypeWrapper::GetInt(TheContext, false, 8).getPointerTo()},
         };
 
         if (typeMap.find(typeName) == typeMap.end()) {
@@ -89,22 +168,41 @@ public:
             return {};
         }
 
-        return TypeWrapper(typeMap[typeName], typeName);
+        return typeMap.find(typeName)->second;
     }
-
-
 };
+
+
+class FunctionWrapper {
+public:
+
+    std::string ModuleId = "";
+    std::string Name = "";
+
+    TypeWrapper type;
+    llvm::Function *Function;
+
+    FunctionWrapper(const std::string &moduleId, const std::string &name, TypeWrapper type, llvm::Function *function)
+            : ModuleId(moduleId), Name(name), type(type), Function(function) {}
+};
+
 
 class ValueWrapper {
     bool IsConstant = false;
     TypeWrapper Type;
     llvm::Value *Value;
+    ValueWrapper(bool isConstant, TypeWrapper typeW, llvm::Value *value) : IsConstant(isConstant), Type(typeW),
+                                                                           Value(value) {}
 
 public:
     typedef std::optional<ValueWrapper> optional;
+    typedef std::shared_ptr<ValueWrapper> ptr;
 
-    ValueWrapper(bool isConstant, TypeWrapper typeW, llvm::Value *value) : IsConstant(isConstant), Type(typeW),
-                                                                           Value(value) {}
+    static ptr Create(bool isConstant, TypeWrapper typeW, llvm::Value *value) {
+        return std::make_shared<ValueWrapper>(ValueWrapper(
+                isConstant, typeW, value
+                ));
+    }
 
     bool isConstant() const {
         return IsConstant;
@@ -118,28 +216,28 @@ public:
         return Value;
     }
 
-    ValueWrapper toRHS(llvm::IRBuilder<> &builder) const {
+    ValueWrapper::ptr toRHS(llvm::IRBuilder<> &builder) const {
         if (isConstant())
-            return *this;
+            return std::make_shared<ValueWrapper>(*this);
 
         llvm::Value *value = builder.CreateLoad(
                 getType().getType(),
                 this->getValue()
         );
 
-        return ValueWrapper(
+        return ValueWrapper::Create(
                 true,
                 getType(),
                 value
         );
     }
 
-    std::optional<ValueWrapper> getPointerTo() const {
+    ValueWrapper::ptr getPointerTo() const {
         if (isConstant()) {
-            return {};
+            return nullptr;
         }
 
-        return ValueWrapper(
+        return ValueWrapper::Create(
                 true,
                 getType().getPointerTo(),
                 getValue()
@@ -149,11 +247,11 @@ public:
 };
 
 class StackController {
-    std::vector<std::pair<llvm::BasicBlock *, std::map<std::string, ValueWrapper>>> Stack = {};
+    std::vector<std::pair<llvm::BasicBlock *, std::map<std::string, ValueWrapper::ptr>>> Stack = {};
 
 public:
     void PushLevel(llvm::BasicBlock *block) {
-        Stack.emplace_back(block, std::map<std::string, ValueWrapper>{});
+        Stack.emplace_back(block, std::map<std::string, ValueWrapper::ptr>{});
     }
 
     void PopLevel() {
@@ -162,7 +260,7 @@ public:
         Stack.pop_back();
     }
 
-    bool AddNamedValue(const std::string &name, ValueWrapper value) {
+    bool AddNamedValue(const std::string &name, ValueWrapper::ptr value) {
         auto ValueInStack = Stack.rbegin()->second.find(name);
         if (ValueInStack != Stack.rbegin()->second.end()) {
             std::cerr << "Variable " << name << " allready defined" << std::endl;
@@ -173,13 +271,13 @@ public:
         return true;
     }
 
-    ValueWrapper::optional GetNamedValue(const std::string name) {
+    ValueWrapper::ptr GetNamedValue(const std::string name) {
         for (auto block = Stack.rbegin(); block != Stack.rend(); block++) {
             if (block->second.find(name) != block->second.end()) {
                 return block->second.find(name)->second;
             }
         }
-        return {};
+        return nullptr;
     }
 
     llvm::BasicBlock *GetBlock() {
@@ -200,7 +298,7 @@ public:
 
     std::string ModuleName;
 
-    std::map<std::string, llvm::Function *> Functions;
+    std::map<std::string, FunctionWrapper> Functions;
 
     [[nodiscard]] std::string GetFunctionID(const std::string &name) const {
         return this->ModuleName + '_' + name;
@@ -252,29 +350,37 @@ class ParserVisitor : public GoParserBaseVisitor {
 
 public:
     void GenereateBuildins() {
-        std::vector<std::pair<std::string, std::pair<llvm::Type *, std::vector<llvm::Type *>>>> functions =
-                {{"printf", {
-                                    llvm::Type::getInt32Ty(*context->TheContext),
-                                    {llvm::Type::getInt8PtrTy(
-                                            *context->TheContext)}}},
-                 {"scanf",  {
-                                    llvm::Type::getInt32Ty(*context->TheContext),
-                                    {llvm::Type::getInt8PtrTy(
-                                            *context->TheContext)}}},
-                };
+        std::vector<FunctionWrapper> functions = {
+                FunctionWrapper("", "printf", TypeWrapper::GetFunction(
+                                        *context->TheContext,
+                                        TypeWrapper::GetInt(*context->TheContext, true, 32),
+                                        std::vector<TypeWrapper>{
+                                                TypeWrapper::GetInt(*context->TheContext, true, 8).getPointerTo()
+                                        },
+                                        true
+                                ), nullptr
+                ),
+                FunctionWrapper("", "scanf", TypeWrapper::GetFunction(
+                                        *context->TheContext,
+                                        TypeWrapper::GetInt(*context->TheContext, true, 32),
+                                        std::vector<TypeWrapper>{
+                                                TypeWrapper::GetInt(*context->TheContext, true, 8).getPointerTo()
+                                        },
+                                        true
+                                ), nullptr
+                ),
+        };
 
-        for (const auto &func: functions) {
-            auto args = func.second.second;
-            auto name = func.first;
-            auto rt = func.second.first;
 
-
-            auto fId = context->GetFunctionID(name);
-            llvm::FunctionType *type = llvm::FunctionType::get(rt, args, false);
-
-            auto f = llvm::Function::Create(type, llvm::Function::ExternalLinkage, name, *context->TheModule);
-            context->Functions[fId] = f;
-
+        for (auto &func: functions) {
+            auto fId = context->GetFunctionID(func.Name);
+            auto f = llvm::Function::Create((llvm::FunctionType *) func.type.getType(), llvm::Function::ExternalLinkage,
+                                            func.Name, *context->TheModule);
+            func.Function = f;
+            context->Functions.insert({
+                                              fId,
+                                              func
+                                      });
         }
 
 
@@ -298,7 +404,8 @@ public:
     }
 
     antlrcpp::Any visitFunctionDecl(GoParser::FunctionDeclContext *ctx) override {
-        std::vector<llvm::Type *> args;
+        std::vector<TypeWrapper> args;
+        std::optional<TypeWrapper> retT = {};
 
         for (auto arg: ctx->signature()->parameters()->parameterDecl()) {
             auto type = context->GetType(arg->type_());
@@ -307,12 +414,10 @@ public:
                 return nullptr;
             }
             for (auto argN: arg->identifierList()->IDENTIFIER()) {
-                args.emplace_back(type->getType());
+                args.push_back(*type);
             }
         }
 
-        auto retType = llvm::Type::getVoidTy(*context->TheContext);
-        bool isVoid = true;
 
         if (ctx->signature()->result()) {
             auto goType = ctx->signature()->result()->type_();
@@ -325,22 +430,29 @@ public:
                 std::cerr << "Can't find type : " << ctx->getText() << std::endl;
                 return nullptr;
             }
-            retType = type->getType();
-            isVoid = false;
+            retT = *type;
         }
 
-        llvm::FunctionType *type = llvm::FunctionType::get(retType, args, false);
+        auto nameCode = ctx->IDENTIFIER()->getText();
+        auto name = context->GetFunctionID(nameCode);
 
-
-        auto name = context->GetFunctionID(ctx->IDENTIFIER()->getText());
-
-        auto func = llvm::Function::Create(type, llvm::Function::ExternalLinkage, name, *context->TheModule);
+        auto funcT = TypeWrapper::GetFunction(*context->TheContext, retT, args);
+        auto func = llvm::Function::Create((llvm::FunctionType *) funcT.getType(), llvm::Function::ExternalLinkage,
+                                           name, *context->TheModule);
 
         auto BB = llvm::BasicBlock::Create(*context->TheContext, "entry", func);
         context->Builder->SetInsertPoint(BB);
 
-
-        context->Functions[name] = func;
+        auto funcWrap = FunctionWrapper(
+                context->ModuleName,
+                nameCode,
+                funcT,
+                func
+                );
+        context->Functions.insert({
+            name,
+            funcWrap
+        });
 
         context->stackController.PushLevel(BB);
 
@@ -358,7 +470,7 @@ public:
 
                     context->stackController.AddNamedValue(
                             argN->getText(),
-                            ValueWrapper(
+                            ValueWrapper::Create(
                                     false,
                                     *ty,
                                     (llvm::Value *) var
@@ -374,7 +486,7 @@ public:
 
         context->stackController.PopLevel();
 
-        if (isVoid) context->Builder->CreateRetVoid();
+        if (!retT) context->Builder->CreateRetVoid();
 
         llvm::verifyFunction(*func);
 
@@ -407,7 +519,7 @@ public:
 
         llvm::Value *retv = llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, value));
 
-        return ValueWrapper(true, *ty, retv);
+        return ValueWrapper::Create(true, *ty, retv);
     }
 
     antlrcpp::Any visitString_(GoParser::String_Context *ctx) override {
@@ -434,7 +546,7 @@ public:
 
         auto ty = TypeWrapper::GetTypeByName("string", *context->TheContext);
 
-        return ValueWrapper(true, *ty, llvmVar);
+        return ValueWrapper::Create(true, *ty, llvmVar);
     }
 
     antlrcpp::Any visitConstDecl(GoParser::ConstDeclContext *ctx) override {
@@ -447,8 +559,8 @@ public:
             return nullptr;
         }
 
-        ValueWrapper expr = ctx->constSpec(0)->expressionList()->expression(0)->accept(this);
-        expr = expr.toRHS(*context->Builder);
+        ValueWrapper::ptr expr = ctx->constSpec(0)->expressionList()->expression(0)->accept(this);
+        expr = expr->toRHS(*context->Builder);
 
         context->stackController.AddNamedValue(
                 ctx->constSpec(0)->identifierList()->IDENTIFIER(0)->getText(),
@@ -468,10 +580,10 @@ public:
             return nullptr;
         }
 
-        ValueWrapper expression = ctx->expressionList()->expression(0)->accept(this);
-        expression = expression.toRHS(*context->Builder);
+        ValueWrapper::ptr expression = ctx->expressionList()->expression(0)->accept(this);
+        expression = expression->toRHS(*context->Builder);
 
-        context->Builder->CreateRet(expression.getValue());
+        context->Builder->CreateRet(expression->getValue());
 
         return nullptr;
     }
@@ -497,7 +609,7 @@ public:
 
         context->stackController.AddNamedValue(
                 ctx->varSpec(0)->identifierList()->IDENTIFIER(0)->getText(),
-                ValueWrapper(
+                ValueWrapper::Create(
                         false,
                         *ty,
                         llvmVar
@@ -508,11 +620,10 @@ public:
             return nullptr;
         }
 
-        ValueWrapper expr = ctx->varSpec(0)->expressionList()->expression(0)->accept(this);
+        ValueWrapper::ptr expr = ctx->varSpec(0)->expressionList()->expression(0)->accept(this);
+        expr = expr->toRHS(*context->Builder);
 
-        expr = expr.toRHS(*context->Builder);
-
-        context->Builder->CreateStore(expr.getValue(), llvmVar);
+        context->Builder->CreateStore(expr->getValue(), llvmVar);
 
         return nullptr;
     }
@@ -522,9 +633,9 @@ public:
         if (ctx->arguments()) {
             auto function_name = ctx->primaryExpr()->operand()->operandName()->IDENTIFIER()->getText();
 
-            auto func = context->Functions[context->GetFunctionID(function_name)];
+            auto func = context->Functions.find(context->GetFunctionID(function_name));
 
-            if (!func) {
+            if (func == context->Functions.end()) {
                 std::cerr << "not found function " << function_name << " : " << ctx->getText() << std::endl;
                 return nullptr;
             }
@@ -532,37 +643,44 @@ public:
             std::vector<llvm::Value *> ArgsV;
 
             for (auto expr: ctx->arguments()->expressionList()->expression()) {
-                ValueWrapper value = expr->accept(this);
+                ValueWrapper::ptr value = expr->accept(this);
 
                 // @todo make cast
-                ArgsV.emplace_back(value.toRHS(*context->Builder).getValue());
+                ArgsV.emplace_back(value->toRHS(*context->Builder)->getValue());
             }
 
-            llvm::Value *value = context->Builder->CreateCall(func, ArgsV);
+            llvm::Value *value = context->Builder->CreateCall(func->second.Function, ArgsV);
 
-            return ValueWrapper(
+
+            auto retType = func->second.type.getTypeDetails().functionInfo->retType;
+
+            if (!retType) {
+                return nullptr;
+            }
+
+            return ValueWrapper::Create(
                     true,
-                    TypeWrapper(value->getType(), "*"), // @todo get from declaration
+                    *retType ,
                     value
             );
 
         }
 
         if (ctx->index()) {
-            ValueWrapper left = ctx->primaryExpr()->accept(this);
+            ValueWrapper::ptr left = ctx->primaryExpr()->accept(this);
 
-            ValueWrapper indexV = ctx->index()->expression()->accept(this);
+            ValueWrapper::ptr indexV = ctx->index()->expression()->accept(this);
 
             std::vector<llvm::Value *> indexes = {
                     llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, 0)),
-                    indexV.toRHS(*context->Builder).getValue()
+                    indexV->toRHS(*context->Builder)->getValue()
             };
 
-            auto valptr = context->Builder->CreateGEP(left.getType().getType(), left.getValue(), indexes);
+            auto valptr = context->Builder->CreateGEP(left->getType().getType(), left->getValue(), indexes);
 
 
-            return ValueWrapper(false,
-                                left.getType().getArrayElementType(),
+            return ValueWrapper::Create(false,
+                                left->getType().getArrayElementType(),
                                 valptr
             );
         }
@@ -570,6 +688,9 @@ public:
         return GoParserBaseVisitor::visitPrimaryExpr(ctx);
     }
 
+//    antlrcpp::Any visitChildren(antlr4::tree::ParseTree *node) override {
+//        return (*node->children.rbegin())->accept(this);
+//    }
 
     antlrcpp::Any visitOperandName(GoParser::OperandNameContext *ctx) override {
         auto varName = ctx->IDENTIFIER()->getText();
@@ -581,54 +702,54 @@ public:
             return nullptr;
         }
 
-        return *value;
+        return value;
     }
 
     antlrcpp::Any visitAssignment(GoParser::AssignmentContext *ctx) override {
         auto varNode = ctx->expressionList(0)->expression(0);
 
-        ValueWrapper lexpr = varNode->accept(this);
+        ValueWrapper::ptr lexpr = varNode->accept(this);
 
-        ValueWrapper expr = ctx->expressionList(1)->accept(this);
+        ValueWrapper::ptr expr = ctx->expressionList(1)->accept(this);
 
 
-        context->Builder->CreateStore(expr.toRHS(*context->Builder).getValue(), lexpr.getValue());
+        context->Builder->CreateStore(expr->toRHS(*context->Builder)->getValue(), lexpr->getValue());
 
         return nullptr;
     }
 
     antlrcpp::Any visitExpression(GoParser::ExpressionContext *ctx) override {
         if (ctx->add_op || ctx->rel_op || ctx->mul_op) {
-            ValueWrapper L = ctx->expression(0)->accept(this);
-            ValueWrapper R = ctx->expression(1)->accept(this);
+            ValueWrapper::ptr L = ctx->expression(0)->accept(this);
+            ValueWrapper::ptr R = ctx->expression(1)->accept(this);
 
-            L = L.toRHS(*context->Builder);
-            R = R.toRHS(*context->Builder);
+            L = L->toRHS(*context->Builder);
+            R = R->toRHS(*context->Builder);
 
             llvm::Value *res = nullptr;
-            auto type = L.getType();
+            auto type = L->getType();
             if (ctx->PLUS()) {
-                res = context->Builder->CreateAdd(L.getValue(), R.getValue());
+                res = context->Builder->CreateAdd(L->getValue(), R->getValue());
             } else if (ctx->MINUS()) {
-                res = context->Builder->CreateSub(L.getValue(), R.getValue());
+                res = context->Builder->CreateSub(L->getValue(), R->getValue());
             } else if (ctx->GREATER()) {
-                res = context->Builder->CreateICmpSGT(L.getValue(), R.getValue());
+                res = context->Builder->CreateICmpSGT(L->getValue(), R->getValue());
                 type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->LESS()) {
-                res = context->Builder->CreateICmpSLT(L.getValue(), R.getValue());
+                res = context->Builder->CreateICmpSLT(L->getValue(), R->getValue());
                 type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->EQUALS()) {
-                res = context->Builder->CreateICmpEQ(L.getValue(), R.getValue());
+                res = context->Builder->CreateICmpEQ(L->getValue(), R->getValue());
                 type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->NOT_EQUALS()) {
-                res = context->Builder->CreateICmpNE(L.getValue(), R.getValue());
+                res = context->Builder->CreateICmpNE(L->getValue(), R->getValue());
                 type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->STAR()) {
-                res = context->Builder->CreateMul(L.getValue(), R.getValue());
+                res = context->Builder->CreateMul(L->getValue(), R->getValue());
             } else if (ctx->DIV()) {
-                res = context->Builder->CreateSDiv(L.getValue(), R.getValue());
+                res = context->Builder->CreateSDiv(L->getValue(), R->getValue());
             } else if (ctx->MOD()) {
-                res = context->Builder->CreateSRem(L.getValue(), R.getValue());
+                res = context->Builder->CreateSRem(L->getValue(), R->getValue());
             }
             // @todo add other ops
 
@@ -637,22 +758,22 @@ public:
                 return nullptr;
             }
 
-            return ValueWrapper(
+            return ValueWrapper::Create(
                     true,
                     type,
                     res
             );
 
         } else if (ctx->AMPERSAND()) {
-            ValueWrapper child = ctx->expression(0)->accept(this);
+            ValueWrapper::ptr child = ctx->expression(0)->accept(this);
 
-            auto value = child.getPointerTo();
+            auto value = child->getPointerTo();
             if (!value) {
                 std::cerr << "Can't get address of constant" << ctx->getText() << std::endl;
                 return nullptr;
             }
 
-            return *value;
+            return value;
         }
 
         return GoParserBaseVisitor::visitExpression(ctx);
@@ -661,20 +782,20 @@ public:
     antlrcpp::Any visitShortVarDecl(GoParser::ShortVarDeclContext *ctx) override {
         std::string name = ctx->identifierList()->IDENTIFIER(0)->getText();
 
-        ValueWrapper expr = ctx->expressionList()->expression(0)->accept(this);
-        expr = expr.toRHS(*context->Builder);
+        ValueWrapper::ptr expr = ctx->expressionList()->expression(0)->accept(this);
+        expr = expr->toRHS(*context->Builder);
 
 
         llvm::IRBuilder<> TmpB(context->stackController.GetBlock(), context->stackController.GetBlock()->begin());
-        auto llvmVar = TmpB.CreateAlloca(expr.getType().getType());
-        context->Builder->CreateStore(expr.getValue(), llvmVar);
+        auto llvmVar = TmpB.CreateAlloca(expr->getType().getType());
+        context->Builder->CreateStore(expr->getValue(), llvmVar);
 
         llvmVar->setName(name);
 
         context->stackController.AddNamedValue(
-                name, ValueWrapper(
+                name, ValueWrapper::Create(
                         false,
-                        expr.getType(),
+                        expr->getType(),
                         llvmVar
                 )
         );
@@ -683,8 +804,8 @@ public:
     }
 
     antlrcpp::Any visitIfStmt(GoParser::IfStmtContext *ctx) override {
-        ValueWrapper CondV = ctx->expression()->accept(this);
-        CondV = CondV.toRHS(*context->Builder);
+        ValueWrapper::ptr CondV = ctx->expression()->accept(this);
+        CondV = CondV->toRHS(*context->Builder);
 
         auto parent = context->stackController.GetBlock()->getParent();
 
@@ -692,7 +813,7 @@ public:
         auto ElseBB = llvm::BasicBlock::Create(*context->TheContext, "else");
         auto MergeBB = llvm::BasicBlock::Create(*context->TheContext, "after-if");
 
-        context->Builder->CreateCondBr(CondV.getValue(), ThenBB, ElseBB);
+        context->Builder->CreateCondBr(CondV->getValue(), ThenBB, ElseBB);
         context->Builder->SetInsertPoint(ThenBB);
 
         context->stackController.PushLevel(context->stackController.GetBlock());
@@ -730,13 +851,13 @@ public:
 
         ctx->forClause()->children[0]->accept(this);
 
-        ValueWrapper StartCond = ctx->forClause()->children[2]->accept(this);
-        StartCond = StartCond.toRHS(*context->Builder);
+        ValueWrapper::ptr StartCond = ctx->forClause()->children[2]->accept(this);
+        StartCond = StartCond->toRHS(*context->Builder);
 
         auto LoopBB = llvm::BasicBlock::Create(*context->TheContext, "loop", TheFunction);
         auto AfterBB = llvm::BasicBlock::Create(*context->TheContext, "afterloop", TheFunction);
 
-        context->Builder->CreateCondBr(StartCond.getValue(), LoopBB, AfterBB);
+        context->Builder->CreateCondBr(StartCond->getValue(), LoopBB, AfterBB);
 
 
         context->Builder->SetInsertPoint(LoopBB);
@@ -747,10 +868,10 @@ public:
         ctx->forClause()->children[4]->accept(this);
 
 
-        ValueWrapper EndCond = ctx->forClause()->children[2]->accept(this);
-        EndCond = EndCond.toRHS(*context->Builder);
+        ValueWrapper::ptr EndCond = ctx->forClause()->children[2]->accept(this);
+        EndCond = EndCond->toRHS(*context->Builder);
 
-        context->Builder->CreateCondBr(EndCond.getValue(), LoopBB, AfterBB);
+        context->Builder->CreateCondBr(EndCond->getValue(), LoopBB, AfterBB);
 
         context->stackController.PopLevel();
 
