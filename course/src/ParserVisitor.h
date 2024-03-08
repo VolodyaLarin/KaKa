@@ -66,21 +66,21 @@ public:
 
     static std::optional<TypeWrapper> GetTypeByName(const std::string &typeName, llvm::LLVMContext &TheContext) {
         static auto typeMap = std::map<std::string, llvm::Type *>{
-                {"bool",   llvm::Type::getInt1Ty(TheContext)},
-                {"int",   llvm::Type::getInt32Ty(TheContext)},
-                {"int8",   llvm::Type::getInt8Ty(TheContext)},
+                {"bool",    llvm::Type::getInt1Ty(TheContext)},
+                {"int",     llvm::Type::getInt32Ty(TheContext)},
+                {"int8",    llvm::Type::getInt8Ty(TheContext)},
                 {"int16",   llvm::Type::getInt16Ty(TheContext)},
                 {"int32",   llvm::Type::getInt32Ty(TheContext)},
                 {"int64",   llvm::Type::getInt64Ty(TheContext)},
-                {"uint",   llvm::Type::getInt32Ty(TheContext)},
+                {"uint",    llvm::Type::getInt32Ty(TheContext)},
                 {"uint8",   llvm::Type::getInt8Ty(TheContext)},
-                {"uint16",   llvm::Type::getInt16Ty(TheContext)},
-                {"uint32",   llvm::Type::getInt32Ty(TheContext)},
-                {"uint64",   llvm::Type::getInt64Ty(TheContext)},
-                {"byte",   llvm::Type::getInt8Ty(TheContext)},
+                {"uint16",  llvm::Type::getInt16Ty(TheContext)},
+                {"uint32",  llvm::Type::getInt32Ty(TheContext)},
+                {"uint64",  llvm::Type::getInt64Ty(TheContext)},
+                {"byte",    llvm::Type::getInt8Ty(TheContext)},
                 {"float32", llvm::Type::getFloatTy(TheContext)},
                 {"float64", llvm::Type::getDoubleTy(TheContext)},
-                {"rune",  llvm::Type::getInt8Ty(TheContext)},
+                {"rune",    llvm::Type::getInt8Ty(TheContext)},
                 {"string",  llvm::Type::getInt8PtrTy(TheContext)},
         };
 
@@ -148,6 +148,47 @@ public:
     }
 };
 
+class StackController {
+    std::vector<std::pair<llvm::BasicBlock *, std::map<std::string, ValueWrapper>>> Stack = {};
+
+public:
+    void PushLevel(llvm::BasicBlock *block) {
+        Stack.emplace_back(block, std::map<std::string, ValueWrapper>{});
+    }
+
+    void PopLevel() {
+        // @todo destruct all;
+
+        Stack.pop_back();
+    }
+
+    bool AddNamedValue(const std::string &name, ValueWrapper value) {
+        auto ValueInStack = Stack.rbegin()->second.find(name);
+        if (ValueInStack != Stack.rbegin()->second.end()) {
+            std::cerr << "Variable " << name << " allready defined" << std::endl;
+            return false;
+        }
+
+        Stack.rbegin()->second.insert({name, value});
+        return true;
+    }
+
+    ValueWrapper::optional GetNamedValue(const std::string name) {
+        for (auto block = Stack.rbegin(); block != Stack.rend(); block++) {
+            if (block->second.find(name) != block->second.end()) {
+                return block->second.find(name)->second;
+            }
+        }
+        return {};
+    }
+
+    llvm::BasicBlock *GetBlock() {
+        if (Stack.empty()) return nullptr;
+
+        return Stack.rbegin()->first;
+    }
+};
+
 class Context {
 public:
 
@@ -155,10 +196,9 @@ public:
     std::shared_ptr<llvm::IRBuilder<>> Builder;
     std::shared_ptr<llvm::Module> TheModule;
 
+    StackController stackController;
+
     std::string ModuleName;
-
-    std::vector<std::pair<llvm::BasicBlock *, std::map<std::string, ValueWrapper>>> Stack = {};
-
 
     std::map<std::string, llvm::Function *> Functions;
 
@@ -205,17 +245,6 @@ public:
 
         return {};
     }
-
-
-    std::optional<ValueWrapper> FindVarible(const std::string &varName) {
-        for (auto block = Stack.rbegin(); block != Stack.rend(); block++) {
-            if (block->second.find(varName) != block->second.end()) {
-                return block->second.find(varName)->second;
-            }
-        }
-        return {};
-    }
-
 };
 
 
@@ -313,9 +342,7 @@ public:
 
         context->Functions[name] = func;
 
-
-        context->Stack.emplace_back(BB, std::map<std::string, ValueWrapper>());
-
+        context->stackController.PushLevel(BB);
 
         {
             int i = 0;
@@ -329,12 +356,13 @@ public:
 
                     context->Builder->CreateStore(llvmArg, var);
 
-
-                    context->Stack.rbegin()->second.insert({argN->getText(), ValueWrapper(
-                            false,
-                            *ty,
-                            (llvm::Value *) var
-                    )});
+                    context->stackController.AddNamedValue(
+                            argN->getText(),
+                            ValueWrapper(
+                                    false,
+                                    *ty,
+                                    (llvm::Value *) var
+                            ));
                 }
             }
         }
@@ -344,11 +372,11 @@ public:
             statement->accept(this);
         }
 
+        context->stackController.PopLevel();
+
         if (isVoid) context->Builder->CreateRetVoid();
 
         llvm::verifyFunction(*func);
-
-        context->Stack.pop_back();
 
         return 0;
     }
@@ -399,7 +427,7 @@ public:
         auto at = llvm::ArrayType::get(llvm::Type::getInt8Ty(*context->TheContext), data.size());
 
         // @todo: alloca from jopa
-        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
+        llvm::IRBuilder<> TmpB(context->stackController.GetBlock(), context->stackController.GetBlock()->begin());
         auto llvmVar = TmpB.CreateAlloca(at);
 
         context->Builder->CreateStore(str, llvmVar);
@@ -418,15 +446,14 @@ public:
             std::cerr << "Can't find type : " << ctx->getText() << std::endl;
             return nullptr;
         }
-        std::cout << ctx->toStringTree() << std::endl;
-        std::cout << ctx->constSpec(0)->expressionList()->expression(0)->toStringTree() << std::endl;
+
         ValueWrapper expr = ctx->constSpec(0)->expressionList()->expression(0)->accept(this);
         expr = expr.toRHS(*context->Builder);
 
-        context->Stack.rbegin()->second.insert(
-                {
-                        ctx->constSpec(0)->identifierList()->IDENTIFIER(0)->getText(),
-                        expr});
+        context->stackController.AddNamedValue(
+                ctx->constSpec(0)->identifierList()->IDENTIFIER(0)->getText(),
+                expr
+        );
 
         return nullptr;
     }
@@ -461,19 +488,21 @@ public:
 
         std::string name = ctx->varSpec()[0]->identifierList()->IDENTIFIER(0)->getText();
 
-        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
+        llvm::IRBuilder<> TmpB(context->stackController.GetBlock(), context->stackController.GetBlock()->begin());
 
 
         auto llvmVar = TmpB.CreateAlloca(ty->getType());
         llvmVar->setName(name);
 
 
-        context->Stack.rbegin()->second.insert(
-                {ctx->varSpec(0)->identifierList()->IDENTIFIER(0)->getText(), ValueWrapper(
+        context->stackController.AddNamedValue(
+                ctx->varSpec(0)->identifierList()->IDENTIFIER(0)->getText(),
+                ValueWrapper(
                         false,
                         *ty,
                         llvmVar
-                )});
+                )
+        );
 
         if (!ctx->varSpec(0)->expressionList()) {
             return nullptr;
@@ -545,7 +574,7 @@ public:
     antlrcpp::Any visitOperandName(GoParser::OperandNameContext *ctx) override {
         auto varName = ctx->IDENTIFIER()->getText();
 
-        auto value = context->FindVarible(varName);
+        auto value = context->stackController.GetNamedValue(varName);
 
         if (!value) {
             std::cerr << "Not found var name " << varName << " : " << ctx->getText() << std::endl;
@@ -636,37 +665,20 @@ public:
         expr = expr.toRHS(*context->Builder);
 
 
-        llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
+        llvm::IRBuilder<> TmpB(context->stackController.GetBlock(), context->stackController.GetBlock()->begin());
         auto llvmVar = TmpB.CreateAlloca(expr.getType().getType());
+        context->Builder->CreateStore(expr.getValue(), llvmVar);
+
         llvmVar->setName(name);
 
-        if (context->Stack.rbegin()->second.find(name) != context->Stack.rbegin()->second.end()) {
-            std::cerr << "Variable " << name << " allready defined: " << ctx->getText() << std::endl;
+        context->stackController.AddNamedValue(
+                name, ValueWrapper(
+                        false,
+                        expr.getType(),
+                        llvmVar
+                )
+        );
 
-            auto var = context->Stack.rbegin()->second.find(name)->second.getPointerTo();
-
-            if (!var) {
-                std::cerr << "Variable " << name << " allready defined like constant: " << ctx->getText() << std::endl;
-                return nullptr;
-            }
-
-            context->Builder->CreateStore(
-                    expr.getValue(), var->getValue()
-            );
-
-            return nullptr;
-        } else {
-
-            context->Stack.rbegin()->second.insert(
-                    {name, ValueWrapper(
-                            false,
-                            expr.getType(),
-                            llvmVar
-                    )});
-
-
-            context->Builder->CreateStore(expr.getValue(), llvmVar);
-        }
         return nullptr;
     }
 
@@ -674,7 +686,7 @@ public:
         ValueWrapper CondV = ctx->expression()->accept(this);
         CondV = CondV.toRHS(*context->Builder);
 
-        auto parent = context->Stack.rbegin()->first->getParent();
+        auto parent = context->stackController.GetBlock()->getParent();
 
         auto ThenBB = llvm::BasicBlock::Create(*context->TheContext, "if", parent);
         auto ElseBB = llvm::BasicBlock::Create(*context->TheContext, "else");
@@ -683,19 +695,23 @@ public:
         context->Builder->CreateCondBr(CondV.getValue(), ThenBB, ElseBB);
         context->Builder->SetInsertPoint(ThenBB);
 
+        context->stackController.PushLevel(context->stackController.GetBlock());
         ctx->block(0)->statementList()->accept(this);
         context->Builder->CreateBr(MergeBB);
 
         parent->insert(parent->end(), ElseBB);
         context->Builder->SetInsertPoint(ElseBB);
 
+        context->stackController.PopLevel();
+
         if (ctx->ELSE()) {
+            context->stackController.PushLevel(context->stackController.GetBlock());
             if (ctx->ifStmt()) {
                 ctx->ifStmt()->accept(this);
             } else {
                 ctx->block(1)->accept(this);
             }
-
+            context->stackController.PopLevel();
         }
         context->Builder->CreateBr(MergeBB);
 
@@ -707,6 +723,10 @@ public:
 
     antlrcpp::Any visitForStmt(GoParser::ForStmtContext *ctx) override {
         llvm::Function *TheFunction = context->Builder->GetInsertBlock()->getParent();
+
+        context->stackController.PushLevel(
+                context->stackController.GetBlock()
+        );
 
         ctx->forClause()->children[0]->accept(this);
 
@@ -721,7 +741,6 @@ public:
 
         context->Builder->SetInsertPoint(LoopBB);
 
-        // @todo fix stack visiblity
 
         ctx->block()->statementList()->accept(this);
 
@@ -732,6 +751,8 @@ public:
         EndCond = EndCond.toRHS(*context->Builder);
 
         context->Builder->CreateCondBr(EndCond.getValue(), LoopBB, AfterBB);
+
+        context->stackController.PopLevel();
 
         context->Builder->SetInsertPoint(AfterBB);
 
