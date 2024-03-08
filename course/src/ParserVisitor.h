@@ -26,14 +26,15 @@
 #include <regex>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <utility>
 #include "./parser/GoParserBaseVisitor.h"
 
 
 class TypeWrapper {
     llvm::Type *Type;
-
+    std::string Name;
 public:
-    explicit TypeWrapper(llvm::Type *type) : Type(type) {}
+    explicit TypeWrapper(llvm::Type *type, std::string name) : Type(type), Name(name) {}
 
     llvm::Type *getType() const {
         return Type;
@@ -41,15 +42,54 @@ public:
 
     TypeWrapper getArrayElementType() {
         return TypeWrapper(
-                Type->getArrayElementType()
+                Type->getArrayElementType(),
+                "!" + Name
         );
     }
 
     TypeWrapper getPointerTo() {
         return TypeWrapper(
-                Type->getPointerTo()
+                Type->getPointerTo(),
+                "&" + Name
         );
     }
+
+    TypeWrapper getArrayOf(size_t count) {
+        return TypeWrapper(
+                llvm::ArrayType::get(Type, count),
+                "[" + std::to_string(count) + "]" + Name
+        );
+    }
+
+    static std::optional<TypeWrapper> GetTypeByName(const std::string &typeName, llvm::LLVMContext &TheContext) {
+        static auto typeMap = std::map<std::string, llvm::Type *>{
+                {"bool",   llvm::Type::getInt1Ty(TheContext)},
+                {"int",   llvm::Type::getInt32Ty(TheContext)},
+                {"int8",   llvm::Type::getInt8Ty(TheContext)},
+                {"int16",   llvm::Type::getInt16Ty(TheContext)},
+                {"int32",   llvm::Type::getInt32Ty(TheContext)},
+                {"int64",   llvm::Type::getInt64Ty(TheContext)},
+                {"uint",   llvm::Type::getInt32Ty(TheContext)},
+                {"uint8",   llvm::Type::getInt8Ty(TheContext)},
+                {"uint16",   llvm::Type::getInt16Ty(TheContext)},
+                {"uint32",   llvm::Type::getInt32Ty(TheContext)},
+                {"uint64",   llvm::Type::getInt64Ty(TheContext)},
+                {"byte",   llvm::Type::getInt8Ty(TheContext)},
+                {"float32", llvm::Type::getFloatTy(TheContext)},
+                {"float64", llvm::Type::getDoubleTy(TheContext)},
+                {"rune",  llvm::Type::getInt8Ty(TheContext)},
+                {"string",  llvm::Type::getInt8PtrTy(TheContext)},
+        };
+
+        if (typeMap.find(typeName) == typeMap.end()) {
+            std::cerr << typeName << " is not supported" << std::endl;
+            return {};
+        }
+
+        return TypeWrapper(typeMap[typeName], typeName);
+    }
+
+
 };
 
 class ValueWrapper {
@@ -58,6 +98,8 @@ class ValueWrapper {
     llvm::Value *Value;
 
 public:
+    typedef std::optional<ValueWrapper> optional;
+
     ValueWrapper(bool isConstant, TypeWrapper typeW, llvm::Value *value) : IsConstant(isConstant), Type(typeW),
                                                                            Value(value) {}
 
@@ -127,10 +169,10 @@ public:
         TheModule = std::make_shared<llvm::Module>("main", *TheContext);
     }
 
-    llvm::Type *GetType(GoParser::Type_Context *typeContext) {
+    std::optional<TypeWrapper> GetType(GoParser::Type_Context *typeContext) {
         if (typeContext->typeName()) {
             auto typeName = typeContext->typeName()->getText();
-            return getType(typeName);
+            return TypeWrapper::GetTypeByName(typeName, *TheContext);
         }
         if (typeContext->type_()) {
             return GetType(typeContext->type_());
@@ -138,43 +180,29 @@ public:
 
         if (!typeContext->typeLit()) {
             std::cerr << "Smth go wrong :" << typeContext->getText() << std::endl;
-            return nullptr;
+            return {};
         }
 
         if (typeContext->typeLit()->arrayType()) {
             auto child = typeContext->typeLit()->arrayType()->elementType()->type_();
             auto childType = GetType(child);
             if (!childType) {
-                return nullptr;
+                return {};
             }
             auto countText = typeContext->typeLit()->arrayType()->arrayLength()->getText();
             auto count = atoi(countText.c_str());
 
             if (count <= 0) {
                 std::cerr << "Can't create array with length " << count << ": " << typeContext->getText();
-                return nullptr;
+                return {};
             }
 
-            auto at = llvm::ArrayType::get(childType, count);
-
-            return at;
+            return childType->getArrayOf(count);
         }
 
-        return nullptr;
+        return {};
     }
 
-    llvm::Type *getType(const std::string &typeName) {
-        auto typeMap = std::map<std::string, llvm::Type *>{{"int",   llvm::Type::getInt32Ty(*TheContext)},
-                                                           {"float", llvm::Type::getFloatTy(*TheContext)},
-                                                           {"rune",  llvm::Type::getInt32Ty(*TheContext)}};
-
-        if (typeMap.find(typeName) == typeMap.end()) {
-            std::cerr << typeName << " is not supported" << std::endl;
-            return nullptr;
-        }
-
-        return typeMap[typeName];
-    }
 
     std::optional<ValueWrapper> FindVarible(const std::string &varName) {
         for (auto block = Stack.rbegin(); block != Stack.rend(); block++) {
@@ -241,13 +269,13 @@ public:
         std::vector<llvm::Type *> args;
 
         for (auto arg: ctx->signature()->parameters()->parameterDecl()) {
-            auto llvmType = context->GetType(arg->type_());
-            if (!llvmType) {
+            auto type = context->GetType(arg->type_());
+            if (!type) {
                 std::cerr << "Can't find type : " << ctx->getText() << std::endl;
                 return nullptr;
             }
             for (auto argN: arg->identifierList()->IDENTIFIER()) {
-                args.emplace_back(llvmType);
+                args.emplace_back(type->getType());
             }
         }
 
@@ -260,12 +288,12 @@ public:
                 std::cerr << "Not supported multiple return: " << ctx->signature()->getText() << std::endl;
                 return nullptr;
             }
-            auto llvmType = context->GetType(goType);
-            if (!llvmType) {
+            auto type = context->GetType(goType);
+            if (!type) {
                 std::cerr << "Can't find type : " << ctx->getText() << std::endl;
                 return nullptr;
             }
-            retType = llvmType;
+            retType = type->getType();
             isVoid = false;
         }
 
@@ -289,19 +317,19 @@ public:
         {
             int i = 0;
             for (auto arg: ctx->signature()->parameters()->parameterDecl()) {
-                auto llvmType = context->getType(arg->type_()->getText());
+                auto ty = context->GetType(arg->type_());
                 for (auto argN: arg->identifierList()->IDENTIFIER()) {
                     auto llvmArg = func->getArg(i);
                     i++;
 
-                    auto var = context->Builder->CreateAlloca(llvmType);
+                    auto var = context->Builder->CreateAlloca(ty->getType());
 
                     context->Builder->CreateStore(llvmArg, var);
 
 
                     context->Stack.rbegin()->second.insert({argN->getText(), ValueWrapper(
                             false,
-                            TypeWrapper(llvmType),
+                            *ty,
                             (llvm::Value *) var
                     )});
                 }
@@ -336,17 +364,19 @@ public:
 
     antlrcpp::Any visitInteger(GoParser::IntegerContext *ctx) override {
         int value = 0;
+        std::string typeName = "int";
+
         if (ctx->RUNE_LIT()) {
             value = toascii(ctx->RUNE_LIT()->getText()[1]);
         } else if (ctx->DECIMAL_LIT()) {
             value = atoi(ctx->getText().c_str());
         }
-        // @todo: support other types
 
+        auto ty = TypeWrapper::GetTypeByName(typeName, *context->TheContext);
 
         llvm::Value *retv = llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, value));
 
-        return ValueWrapper(true, TypeWrapper(llvm::Type::getInt32Ty(*context->TheContext)), retv);
+        return ValueWrapper(true, *ty, retv);
     }
 
     antlrcpp::Any visitString_(GoParser::String_Context *ctx) override {
@@ -363,21 +393,17 @@ public:
         data.pop_back();
 
         auto str = llvm::ConstantDataArray::getString(*context->TheContext, data.c_str() + 1, true);
-
         auto at = llvm::ArrayType::get(llvm::Type::getInt8Ty(*context->TheContext), data.size());
-
 
         // @todo: alloca from jopa
         llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
-
-
         auto llvmVar = TmpB.CreateAlloca(at);
-
 
         context->Builder->CreateStore(str, llvmVar);
 
+        auto ty = TypeWrapper::GetTypeByName("string", *context->TheContext);
 
-        return ValueWrapper(true, TypeWrapper(at), llvmVar);
+        return ValueWrapper(true, *ty, llvmVar);
     }
 
     antlrcpp::Any visitConstDecl(GoParser::ConstDeclContext *ctx) override {
@@ -389,7 +415,8 @@ public:
             std::cerr << "Can't find type : " << ctx->getText() << std::endl;
             return nullptr;
         }
-
+        std::cout << ctx->toStringTree() << std::endl;
+        std::cout << ctx->constSpec(0)->expressionList()->expression(0)->toStringTree() << std::endl;
         ValueWrapper expr = ctx->constSpec(0)->expressionList()->expression(0)->accept(this);
         expr = expr.toRHS(*context->Builder);
 
@@ -402,7 +429,7 @@ public:
     }
 
     antlrcpp::Any visitReturnStmt(GoParser::ReturnStmtContext *ctx) override {
-        if (!ctx->expressionList()->expression().size()) {
+        if (ctx->expressionList()->expression().empty()) {
             context->Builder->CreateRetVoid();
             return nullptr;
         }
@@ -423,8 +450,8 @@ public:
     antlrcpp::Any visitVarDecl(GoParser::VarDeclContext *ctx) override {
         // @todo support multiple declaration
         auto typeNode = ctx->varSpec()[0]->type_();
-        auto llvmType = context->GetType(typeNode);
-        if (!llvmType) {
+        auto ty = context->GetType(typeNode);
+        if (!ty) {
             std::cerr << "Can't find type : " << ctx->getText() << std::endl;
             return nullptr;
         }
@@ -434,14 +461,14 @@ public:
         llvm::IRBuilder<> TmpB(context->Stack.rbegin()->first, context->Stack.rbegin()->first->begin());
 
 
-        auto llvmVar = TmpB.CreateAlloca(llvmType);
+        auto llvmVar = TmpB.CreateAlloca(ty->getType());
         llvmVar->setName(name);
 
 
         context->Stack.rbegin()->second.insert(
                 {ctx->varSpec(0)->identifierList()->IDENTIFIER(0)->getText(), ValueWrapper(
                         false,
-                        TypeWrapper(llvmType),
+                        *ty,
                         llvmVar
                 )});
 
@@ -483,7 +510,7 @@ public:
 
             return ValueWrapper(
                     true,
-                    TypeWrapper(value->getType()),
+                    TypeWrapper(value->getType(), "*"), // @todo get from declaration
                     value
             );
 
@@ -513,7 +540,6 @@ public:
 
 
     antlrcpp::Any visitOperandName(GoParser::OperandNameContext *ctx) override {
-
         auto varName = ctx->IDENTIFIER()->getText();
 
         auto value = context->FindVarible(varName);
@@ -548,23 +574,23 @@ public:
             R = R.toRHS(*context->Builder);
 
             llvm::Value *res = nullptr;
-            llvm::Type *type = L.getType().getType();
+            auto type = L.getType();
             if (ctx->PLUS()) {
                 res = context->Builder->CreateAdd(L.getValue(), R.getValue());
             } else if (ctx->MINUS()) {
                 res = context->Builder->CreateSub(L.getValue(), R.getValue());
             } else if (ctx->GREATER()) {
                 res = context->Builder->CreateICmpSGT(L.getValue(), R.getValue());
-                type = llvm::Type::getInt1Ty(*context->TheContext);
+                type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->LESS()) {
                 res = context->Builder->CreateICmpSLT(L.getValue(), R.getValue());
-                type = llvm::Type::getInt1Ty(*context->TheContext);
+                type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->EQUALS()) {
                 res = context->Builder->CreateICmpEQ(L.getValue(), R.getValue());
-                type = llvm::Type::getInt1Ty(*context->TheContext);
+                type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->NOT_EQUALS()) {
                 res = context->Builder->CreateICmpNE(L.getValue(), R.getValue());
-                type = llvm::Type::getInt1Ty(*context->TheContext);
+                type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->STAR()) {
                 res = context->Builder->CreateMul(L.getValue(), R.getValue());
             } else if (ctx->DIV()) {
@@ -581,7 +607,7 @@ public:
 
             return ValueWrapper(
                     true,
-                    TypeWrapper(type),
+                    type,
                     res
             );
 
@@ -612,18 +638,18 @@ public:
         llvmVar->setName(name);
 
         if (context->Stack.rbegin()->second.find(name) != context->Stack.rbegin()->second.end()) {
-            std::cerr << "Variable " <<  name << " allready defined: " << ctx->getText() << std::endl;
+            std::cerr << "Variable " << name << " allready defined: " << ctx->getText() << std::endl;
 
             auto var = context->Stack.rbegin()->second.find(name)->second.getPointerTo();
 
             if (!var) {
-                std::cerr << "Variable " <<  name << " allready defined like constant: " << ctx->getText() << std::endl;
+                std::cerr << "Variable " << name << " allready defined like constant: " << ctx->getText() << std::endl;
                 return nullptr;
             }
 
             context->Builder->CreateStore(
                     expr.getValue(), var->getValue()
-                    );
+            );
 
             return nullptr;
         } else {
