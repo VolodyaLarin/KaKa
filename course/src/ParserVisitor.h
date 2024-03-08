@@ -63,6 +63,9 @@ class TypeWrapper {
     }
 
 public:
+    const bool isNumber() {
+        return typeDetails.intInfo || typeDetails.floatInfo;
+    }
     const TypeDetails &getTypeDetails() const {
         return typeDetails;
     }
@@ -164,11 +167,29 @@ public:
         };
 
         if (typeMap.find(typeName) == typeMap.end()) {
-            std::cerr << typeName << " is not supported" << std::endl;
             return {};
         }
 
         return typeMap.find(typeName)->second;
+    }
+
+    std::optional<TypeWrapper> getHigherType(llvm::LLVMContext &context, TypeWrapper right) {
+        if (this->isNumber() && right.isNumber()) {
+
+            if (this->getTypeDetails().floatInfo || right.getTypeDetails().floatInfo) {
+                return TypeWrapper::GetFloat(context);
+            } else {
+                bool isSigned = this->getTypeDetails().intInfo->isSigned || right.getTypeDetails().intInfo->isSigned;
+                auto size = std::max(
+                        this->getTypeDetails().intInfo->bitSize,
+                        right.getTypeDetails().intInfo->bitSize
+                        );
+                return TypeWrapper::GetInt(context, isSigned, size);
+            }
+
+        }
+
+        return {};
     }
 };
 
@@ -244,6 +265,38 @@ public:
         );
 
     }
+
+    ValueWrapper::ptr castTo(llvm::IRBuilder<> &builder, TypeWrapper ty) const {
+        auto RHS = toRHS(builder);
+
+        if(!RHS->getType().isNumber()) {
+            std::cerr << "Can casts only numbers";
+            return nullptr;
+        }
+
+        if (ty.getTypeDetails().floatInfo) {
+            if (RHS->getType().getTypeDetails().floatInfo) {
+                return RHS;
+            }
+            return ValueWrapper::Create(
+                    true,
+                    ty,
+                    builder.CreateSIToFP(RHS->getValue(), ty.getType())
+                    );
+        } else if (ty.getTypeDetails().intInfo) {
+            if (RHS->getType().getTypeDetails().floatInfo) {
+                return ValueWrapper::Create(
+                        true,
+                        ty,
+                        builder.CreateFPToSI(RHS->getValue(), ty.getType())
+                );
+            } else {
+                // @todo: add other casts...
+                return RHS;
+            }
+        }
+        return nullptr;
+    }
 };
 
 class StackController {
@@ -313,7 +366,11 @@ public:
     std::optional<TypeWrapper> GetType(GoParser::Type_Context *typeContext) {
         if (typeContext->typeName()) {
             auto typeName = typeContext->typeName()->getText();
-            return TypeWrapper::GetTypeByName(typeName, *TheContext);
+            auto ty = TypeWrapper::GetTypeByName(typeName, *TheContext);
+            if (!ty) {
+                std::cerr << typeName << " is not supported: " << typeContext->getText() <<  std::endl;
+            };
+            return ty;
         }
         if (typeContext->type_()) {
             return GetType(typeContext->type_());
@@ -505,6 +562,8 @@ public:
         return GoParserBaseVisitor::visitStatement(ctx);
     }
 
+
+
     antlrcpp::Any visitInteger(GoParser::IntegerContext *ctx) override {
         int value = 0;
         std::string typeName = "int";
@@ -520,6 +579,21 @@ public:
         llvm::Value *retv = llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, value));
 
         return ValueWrapper::Create(true, *ty, retv);
+    }
+
+    antlrcpp::Any visitBasicLit(GoParser::BasicLitContext *ctx) override {
+        if (ctx->FLOAT_LIT()) {
+            auto string = ctx->FLOAT_LIT()->getText();
+            auto num = std::stod(string);
+
+            auto ty = TypeWrapper::GetFloat(*context->TheContext);
+            return ValueWrapper::Create(
+                    true,
+                    ty,
+                    llvm::ConstantFP::get(ty.getType(), llvm::APFloat(num))
+                    );
+        }
+        return GoParserBaseVisitor::visitBasicLit(ctx);
     }
 
     antlrcpp::Any visitString_(GoParser::String_Context *ctx) override {
@@ -633,6 +707,19 @@ public:
         if (ctx->arguments()) {
             auto function_name = ctx->primaryExpr()->operand()->operandName()->IDENTIFIER()->getText();
 
+
+            auto Type2Cast = TypeWrapper::GetTypeByName(function_name, *context->TheContext);
+            if (Type2Cast) {
+                if (ctx->arguments()->expressionList()->expression().size() != 1) {
+                    std::cerr << "can't cast more than one value " << function_name << " : " << ctx->getText() << std::endl;
+                    return nullptr;
+                }
+
+                ValueWrapper::ptr RHS = ctx->arguments()->expressionList()->expression(0)->accept(this);
+                return RHS->castTo(*context->Builder, *Type2Cast);
+            }
+
+
             auto func = context->Functions.find(context->GetFunctionID(function_name));
 
             if (func == context->Functions.end()) {
@@ -726,29 +813,85 @@ public:
             L = L->toRHS(*context->Builder);
             R = R->toRHS(*context->Builder);
 
+            auto ComputedType = L->getType().getHigherType(*context->TheContext, R->getType());
+            if (!ComputedType) {
+                std::cerr << "Can't compute type of result operation (may be it's not a numbers...): " << ctx->getText() << std::endl;
+                return nullptr;
+            }
+
+
             llvm::Value *res = nullptr;
-            auto type = L->getType();
+            auto type = *ComputedType;
+
+            L = L->castTo(*context->Builder, type);
+            R = R->castTo(*context->Builder, type);
+
+
             if (ctx->PLUS()) {
-                res = context->Builder->CreateAdd(L->getValue(), R->getValue());
+                if (type.getTypeDetails().intInfo) {
+                    res = context->Builder->CreateAdd(L->getValue(), R->getValue());
+                } else if (type.getTypeDetails().floatInfo) {
+                    res = context->Builder->CreateFAdd(L->getValue(), R->getValue());
+                }
             } else if (ctx->MINUS()) {
-                res = context->Builder->CreateSub(L->getValue(), R->getValue());
+                if (type.getTypeDetails().intInfo) {
+                    res = context->Builder->CreateSub(L->getValue(), R->getValue());
+                } else if (type.getTypeDetails().floatInfo) {
+                    res = context->Builder->CreateFSub(L->getValue(), R->getValue());
+                }
             } else if (ctx->GREATER()) {
-                res = context->Builder->CreateICmpSGT(L->getValue(), R->getValue());
+                if (type.getTypeDetails().intInfo) {
+                    if (type.getTypeDetails().intInfo->isSigned) {
+                        res = context->Builder->CreateICmpSGT(L->getValue(), R->getValue());
+                    } else {
+                        res = context->Builder->CreateICmpUGE(L->getValue(), R->getValue());
+                    }
+                } else if (type.getTypeDetails().floatInfo) {
+                    res = context->Builder->CreateFCmpOGE(L->getValue(), R->getValue());
+                }
                 type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->LESS()) {
-                res = context->Builder->CreateICmpSLT(L->getValue(), R->getValue());
+                if (type.getTypeDetails().intInfo) {
+                    if (type.getTypeDetails().intInfo->isSigned) {
+                        res = context->Builder->CreateICmpSLT(L->getValue(), R->getValue());
+                    } else {
+                        res = context->Builder->CreateICmpULE(L->getValue(), R->getValue());
+                    }
+                } else if (type.getTypeDetails().floatInfo) {
+                    res = context->Builder->CreateFCmpOLE(L->getValue(), R->getValue());
+                }
                 type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->EQUALS()) {
-                res = context->Builder->CreateICmpEQ(L->getValue(), R->getValue());
+                if (type.getTypeDetails().intInfo) {
+                    res = context->Builder->CreateICmpEQ(L->getValue(), R->getValue());
+                } else if (type.getTypeDetails().floatInfo) {
+                    res = context->Builder->CreateFCmpOEQ(L->getValue(), R->getValue());
+                }
                 type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->NOT_EQUALS()) {
-                res = context->Builder->CreateICmpNE(L->getValue(), R->getValue());
+                if (type.getTypeDetails().intInfo) {
+                    res = context->Builder->CreateICmpNE(L->getValue(), R->getValue());
+                } else if (type.getTypeDetails().floatInfo) {
+                    res = context->Builder->CreateFCmpONE(L->getValue(), R->getValue());
+                }
                 type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
             } else if (ctx->STAR()) {
                 res = context->Builder->CreateMul(L->getValue(), R->getValue());
             } else if (ctx->DIV()) {
-                res = context->Builder->CreateSDiv(L->getValue(), R->getValue());
+                if (type.getTypeDetails().intInfo) {
+                    if (type.getTypeDetails().intInfo->isSigned) {
+                        res = context->Builder->CreateSDiv(L->getValue(), R->getValue());
+                    } else {
+                        res = context->Builder->CreateUDiv(L->getValue(), R->getValue());
+                    }
+                } else if (type.getTypeDetails().floatInfo) {
+                    res = context->Builder->CreateFDiv(L->getValue(), R->getValue());
+                }
             } else if (ctx->MOD()) {
+                if (!type.getTypeDetails().intInfo) {
+                    std::cerr << "Mod operation works only with integers: " << ctx->getText() << std::endl;
+                    return nullptr;
+                }
                 res = context->Builder->CreateSRem(L->getValue(), R->getValue());
             }
             // @todo add other ops
@@ -769,7 +912,7 @@ public:
 
             auto value = child->getPointerTo();
             if (!value) {
-                std::cerr << "Can't get address of constant" << ctx->getText() << std::endl;
+                std::cerr << "Can't get address of: " << ctx->getText() << std::endl;
                 return nullptr;
             }
 

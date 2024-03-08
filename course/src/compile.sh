@@ -10,3 +10,6 @@ echo Make starter
 gcc -c starter.c -o starter.o -ggdb
 echo Prepare executable
 gcc starter.o file.o
+echo ========
+./a.out
+
