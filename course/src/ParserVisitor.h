@@ -46,10 +46,15 @@ struct TypeDetails {
         std::vector<TypeWrapper> arguments;
     };
 
+    struct StructInfo {
+        std::vector<TypeWrapper> fields;
+        std::vector<std::string> fieldNames;
+    };
+
     std::optional<IntInfo> intInfo = {};
     std::optional<FloatInfo> floatInfo = {};
     std::optional<FunctionInfo> functionInfo = {};
-
+    std::optional<StructInfo> structInfo = {};
 
 };
 
@@ -66,6 +71,7 @@ public:
     const bool isNumber() {
         return typeDetails.intInfo || typeDetails.floatInfo;
     }
+
     const TypeDetails &getTypeDetails() const {
         return typeDetails;
     }
@@ -88,6 +94,30 @@ public:
         ty.typeDetails.floatInfo = TypeDetails::FloatInfo{
                 64
         };
+        return std::move(ty);
+    }
+
+    static TypeWrapper GetStruct(
+            llvm::LLVMContext &TheContext,
+            std::vector<std::pair<std::string, TypeWrapper>> &fields
+    ) {
+        std::vector<TypeWrapper> fieldsTypes;
+        std::vector<llvm::Type *> llvmTypes;
+        std::vector<std::string> fieldsNames;
+
+        for (auto field: fields) {
+            fieldsNames.push_back(field.first);
+            fieldsTypes.push_back(field.second);
+            llvmTypes.push_back(field.second.getType());
+        }
+
+        auto ty = TypeWrapper(llvm::StructType::get(TheContext, llvmTypes));
+
+        ty.typeDetails.structInfo = TypeDetails::StructInfo{
+                fieldsTypes,
+                fieldsNames
+        };
+
         return std::move(ty);
     }
 
@@ -144,33 +174,13 @@ public:
         );
     }
 
-    static std::optional<TypeWrapper> GetTypeByName(const std::string &typeName, llvm::LLVMContext &TheContext) {
-        size_t standartIntSize = 32;
-
-        static auto typeMap = std::map<std::string, TypeWrapper>{
-                {"bool",    TypeWrapper::GetInt(TheContext, false, 1)},
-                {"int",     TypeWrapper::GetInt(TheContext, true, standartIntSize)},
-                {"int8",    TypeWrapper::GetInt(TheContext, true, 8)},
-                {"int16",   TypeWrapper::GetInt(TheContext, true, 16)},
-                {"int32",   TypeWrapper::GetInt(TheContext, true, 32)},
-                {"int64",   TypeWrapper::GetInt(TheContext, true, 64)},
-                {"uint",    TypeWrapper::GetInt(TheContext, false, standartIntSize)},
-                {"uint8",   TypeWrapper::GetInt(TheContext, false, 8)},
-                {"uint16",  TypeWrapper::GetInt(TheContext, false, 16)},
-                {"uint32",  TypeWrapper::GetInt(TheContext, false, 32)},
-                {"uint64",  TypeWrapper::GetInt(TheContext, false, 64)},
-                {"byte",    TypeWrapper::GetInt(TheContext, false, 8)},
-                {"float32", TypeWrapper::GetFloat(TheContext, false)},
-                {"float64", TypeWrapper::GetFloat(TheContext, true)},
-                {"rune",    TypeWrapper::GetInt(TheContext, false, 8)},
-                {"string",  TypeWrapper::GetInt(TheContext, false, 8).getPointerTo()},
-        };
-
-        if (typeMap.find(typeName) == typeMap.end()) {
+    static std::optional<TypeWrapper> GetTypeByName(const std::string &typeName, llvm::LLVMContext &TheContext,
+                                                    std::map<std::string, TypeWrapper> &typeStorage) {
+        if (typeStorage.find(typeName) == typeStorage.end()) {
             return {};
         }
 
-        return typeMap.find(typeName)->second;
+        return typeStorage.find(typeName)->second;
     }
 
     std::optional<TypeWrapper> getHigherType(llvm::LLVMContext &context, TypeWrapper right) {
@@ -183,7 +193,7 @@ public:
                 auto size = std::max(
                         this->getTypeDetails().intInfo->bitSize,
                         right.getTypeDetails().intInfo->bitSize
-                        );
+                );
                 return TypeWrapper::GetInt(context, isSigned, size);
             }
 
@@ -212,6 +222,7 @@ class ValueWrapper {
     bool IsConstant = false;
     TypeWrapper Type;
     llvm::Value *Value;
+
     ValueWrapper(bool isConstant, TypeWrapper typeW, llvm::Value *value) : IsConstant(isConstant), Type(typeW),
                                                                            Value(value) {}
 
@@ -222,7 +233,7 @@ public:
     static ptr Create(bool isConstant, TypeWrapper typeW, llvm::Value *value) {
         return std::make_shared<ValueWrapper>(ValueWrapper(
                 isConstant, typeW, value
-                ));
+        ));
     }
 
     bool isConstant() const {
@@ -269,7 +280,7 @@ public:
     ValueWrapper::ptr castTo(llvm::IRBuilder<> &builder, TypeWrapper ty) const {
         auto RHS = toRHS(builder);
 
-        if(!RHS->getType().isNumber()) {
+        if (!RHS->getType().isNumber()) {
             std::cerr << "Can casts only numbers";
             return nullptr;
         }
@@ -282,7 +293,7 @@ public:
                     true,
                     ty,
                     builder.CreateSIToFP(RHS->getValue(), ty.getType())
-                    );
+            );
         } else if (ty.getTypeDetails().intInfo) {
             if (RHS->getType().getTypeDetails().floatInfo) {
                 return ValueWrapper::Create(
@@ -352,6 +363,7 @@ public:
     std::string ModuleName;
 
     std::map<std::string, FunctionWrapper> Functions;
+    std::map<std::string, TypeWrapper> Types;
 
     [[nodiscard]] std::string GetFunctionID(const std::string &name) const {
         return this->ModuleName + '_' + name;
@@ -361,14 +373,35 @@ public:
         TheContext = std::make_shared<llvm::LLVMContext>();
         Builder = std::make_shared<llvm::IRBuilder<>>(*TheContext);
         TheModule = std::make_shared<llvm::Module>("main", *TheContext);
+
+        size_t standartIntSize = 32;
+        Types = std::map<std::string, TypeWrapper>{
+                {"bool",    TypeWrapper::GetInt(*TheContext, false, 1)},
+                {"int",     TypeWrapper::GetInt(*TheContext, true, standartIntSize)},
+                {"int8",    TypeWrapper::GetInt(*TheContext, true, 8)},
+                {"int16",   TypeWrapper::GetInt(*TheContext, true, 16)},
+                {"int32",   TypeWrapper::GetInt(*TheContext, true, 32)},
+                {"int64",   TypeWrapper::GetInt(*TheContext, true, 64)},
+                {"uint",    TypeWrapper::GetInt(*TheContext, false, standartIntSize)},
+                {"uint8",   TypeWrapper::GetInt(*TheContext, false, 8)},
+                {"uint16",  TypeWrapper::GetInt(*TheContext, false, 16)},
+                {"uint32",  TypeWrapper::GetInt(*TheContext, false, 32)},
+                {"uint64",  TypeWrapper::GetInt(*TheContext, false, 64)},
+                {"byte",    TypeWrapper::GetInt(*TheContext, false, 8)},
+                {"float32", TypeWrapper::GetFloat(*TheContext, false)},
+                {"float64", TypeWrapper::GetFloat(*TheContext, true)},
+                {"rune",    TypeWrapper::GetInt(*TheContext, false, 8)},
+                {"string",  TypeWrapper::GetInt(*TheContext, false, 8).getPointerTo()},
+        };
     }
+
 
     std::optional<TypeWrapper> GetType(GoParser::Type_Context *typeContext) {
         if (typeContext->typeName()) {
             auto typeName = typeContext->typeName()->getText();
-            auto ty = TypeWrapper::GetTypeByName(typeName, *TheContext);
+            auto ty = TypeWrapper::GetTypeByName(typeName, *TheContext, Types);
             if (!ty) {
-                std::cerr << typeName << " is not supported: " << typeContext->getText() <<  std::endl;
+                std::cerr << typeName << " is not supported: " << typeContext->getText() << std::endl;
             };
             return ty;
         }
@@ -379,6 +412,31 @@ public:
         if (!typeContext->typeLit()) {
             std::cerr << "Smth go wrong :" << typeContext->getText() << std::endl;
             return {};
+        }
+        if (typeContext->typeLit()->structType()) {
+            auto structTN = typeContext->typeLit()->structType();
+
+            std::vector<std::pair<std::string, TypeWrapper>> fields = {};
+
+            for (auto &field: structTN->fieldDecl()) {
+                // @todo support multiple
+                auto fieldName = field->identifierList()->IDENTIFIER(0)->getText();
+                auto fieldT = GetType(field->type_());
+                if (!fieldT) {
+                    std::cerr << "Can't find type of " << fieldName << ": " << field->getText() << std::endl;
+                    std::cerr << typeContext->getText() << std::endl;
+                    return {};
+                }
+
+                fields.push_back({
+                                         fieldName,
+                                         *fieldT
+                                 });
+
+            }
+
+            return TypeWrapper::GetStruct(*TheContext, fields);
+
         }
 
         if (typeContext->typeLit()->arrayType()) {
@@ -453,6 +511,34 @@ public:
             // @todo: implement imports
         }
 
+        for (auto decl: ctx->declaration()) {
+            if (!decl->typeDecl()) {
+                std::cerr << "This is not supported: " << decl->getText();
+                continue;
+            }
+
+            if (decl->typeDecl()->typeSpec(0)->aliasDecl()) {
+                std::cerr << "Aliases is not supported: " << decl->getText();
+                continue;
+            }
+            auto def = decl->typeDecl()->typeSpec(0)->typeDef();
+
+            auto defName = def->IDENTIFIER()->getText();
+            auto type = context->GetType(def->type_());
+
+            if (!type) {
+                std::cerr << "Can't declare type " << defName << std::endl;
+                continue;
+            }
+
+            context->Types.insert({
+                                          defName,
+                                          *type
+                                  });
+
+
+        }
+
         for (auto funcDecl: ctx->functionDecl()) {
             this->visitFunctionDecl(funcDecl);
         }
@@ -505,11 +591,11 @@ public:
                 nameCode,
                 funcT,
                 func
-                );
+        );
         context->Functions.insert({
-            name,
-            funcWrap
-        });
+                                          name,
+                                          funcWrap
+                                  });
 
         context->stackController.PushLevel(BB);
 
@@ -563,10 +649,9 @@ public:
     }
 
 
-
     antlrcpp::Any visitInteger(GoParser::IntegerContext *ctx) override {
         int value = 0;
-        std::string typeName = "int";
+        TypeWrapper type = TypeWrapper::GetInt(*context->TheContext, true, 32);
 
         if (ctx->RUNE_LIT()) {
             value = toascii(ctx->RUNE_LIT()->getText()[1]);
@@ -574,11 +659,9 @@ public:
             value = atoi(ctx->getText().c_str());
         }
 
-        auto ty = TypeWrapper::GetTypeByName(typeName, *context->TheContext);
-
         llvm::Value *retv = llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, value));
 
-        return ValueWrapper::Create(true, *ty, retv);
+        return ValueWrapper::Create(true, type, retv);
     }
 
     antlrcpp::Any visitBasicLit(GoParser::BasicLitContext *ctx) override {
@@ -591,7 +674,7 @@ public:
                     true,
                     ty,
                     llvm::ConstantFP::get(ty.getType(), llvm::APFloat(num))
-                    );
+            );
         }
         return GoParserBaseVisitor::visitBasicLit(ctx);
     }
@@ -618,9 +701,9 @@ public:
 
         context->Builder->CreateStore(str, llvmVar);
 
-        auto ty = TypeWrapper::GetTypeByName("string", *context->TheContext);
+        TypeWrapper ty = TypeWrapper::GetInt(*context->TheContext, false, 8).getPointerTo();
 
-        return ValueWrapper::Create(true, *ty, llvmVar);
+        return ValueWrapper::Create(true, ty, llvmVar);
     }
 
     antlrcpp::Any visitConstDecl(GoParser::ConstDeclContext *ctx) override {
@@ -708,10 +791,11 @@ public:
             auto function_name = ctx->primaryExpr()->operand()->operandName()->IDENTIFIER()->getText();
 
 
-            auto Type2Cast = TypeWrapper::GetTypeByName(function_name, *context->TheContext);
+            auto Type2Cast = TypeWrapper::GetTypeByName(function_name, *context->TheContext, context->Types);
             if (Type2Cast) {
                 if (ctx->arguments()->expressionList()->expression().size() != 1) {
-                    std::cerr << "can't cast more than one value " << function_name << " : " << ctx->getText() << std::endl;
+                    std::cerr << "can't cast more than one value " << function_name << " : " << ctx->getText()
+                              << std::endl;
                     return nullptr;
                 }
 
@@ -747,7 +831,7 @@ public:
 
             return ValueWrapper::Create(
                     true,
-                    *retType ,
+                    *retType,
                     value
             );
 
@@ -767,9 +851,50 @@ public:
 
 
             return ValueWrapper::Create(false,
-                                left->getType().getArrayElementType(),
-                                valptr
+                                        left->getType().getArrayElementType(),
+                                        valptr
             );
+        }
+
+        if (ctx->DOT()) {
+            ValueWrapper::ptr left = ctx->primaryExpr()->accept(this);
+
+            auto structInfo = left->getType().getTypeDetails().structInfo;
+            if (!structInfo) {
+                std::cerr << "Dot operation supports only for structs: " << ctx->getText() << std::endl;
+                return nullptr;
+            }
+
+            auto fieldName = ctx->IDENTIFIER()->getText();
+            size_t fieldI = 0;
+            std::optional<TypeWrapper> fieldType;
+
+            for (auto f: structInfo->fieldNames) {
+                if (f == fieldName) {
+                    fieldType = structInfo->fields[fieldI];
+                    break;
+                }
+                fieldI++;
+            }
+
+            if (!fieldType) {
+                std::cerr << "Can't find struct field " << fieldName << ": " << ctx->getText();
+                return nullptr;
+
+            }
+
+            std::vector<llvm::Value *> indexes = {
+                    llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, 0)),
+                    llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, fieldI))
+            };
+
+            auto valptr = context->Builder->CreateGEP(left->getType().getType(), left->getValue(), indexes);
+
+
+            return ValueWrapper::Create(false,
+                                        *fieldType,
+                                        valptr);
+
         }
 
         return GoParserBaseVisitor::visitPrimaryExpr(ctx);
@@ -815,7 +940,8 @@ public:
 
             auto ComputedType = L->getType().getHigherType(*context->TheContext, R->getType());
             if (!ComputedType) {
-                std::cerr << "Can't compute type of result operation (may be it's not a numbers...): " << ctx->getText() << std::endl;
+                std::cerr << "Can't compute type of result operation (may be it's not a numbers...): " << ctx->getText()
+                          << std::endl;
                 return nullptr;
             }
 
@@ -849,7 +975,7 @@ public:
                 } else if (type.getTypeDetails().floatInfo) {
                     res = context->Builder->CreateFCmpOGE(L->getValue(), R->getValue());
                 }
-                type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
+                type = TypeWrapper::GetInt(*context->TheContext, false, 1);
             } else if (ctx->LESS()) {
                 if (type.getTypeDetails().intInfo) {
                     if (type.getTypeDetails().intInfo->isSigned) {
@@ -860,21 +986,21 @@ public:
                 } else if (type.getTypeDetails().floatInfo) {
                     res = context->Builder->CreateFCmpOLE(L->getValue(), R->getValue());
                 }
-                type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
+                type = TypeWrapper::GetInt(*context->TheContext, false, 1);
             } else if (ctx->EQUALS()) {
                 if (type.getTypeDetails().intInfo) {
                     res = context->Builder->CreateICmpEQ(L->getValue(), R->getValue());
                 } else if (type.getTypeDetails().floatInfo) {
                     res = context->Builder->CreateFCmpOEQ(L->getValue(), R->getValue());
                 }
-                type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
+                type = TypeWrapper::GetInt(*context->TheContext, false, 1);
             } else if (ctx->NOT_EQUALS()) {
                 if (type.getTypeDetails().intInfo) {
                     res = context->Builder->CreateICmpNE(L->getValue(), R->getValue());
                 } else if (type.getTypeDetails().floatInfo) {
                     res = context->Builder->CreateFCmpONE(L->getValue(), R->getValue());
                 }
-                type = *TypeWrapper::GetTypeByName("bool", *context->TheContext);
+                type = TypeWrapper::GetInt(*context->TheContext, false, 1);
             } else if (ctx->STAR()) {
                 res = context->Builder->CreateMul(L->getValue(), R->getValue());
             } else if (ctx->DIV()) {
