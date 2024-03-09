@@ -2,6 +2,7 @@
 
 set -e
 
+gofmt -w "$1"
 echo Build $1
 ./cmake-build-debug/app "$1"
 echo Make object go

@@ -51,10 +51,15 @@ struct TypeDetails {
         std::vector<std::string> fieldNames;
     };
 
+    struct PointerInfo {
+        std::shared_ptr<TypeWrapper> type;
+    };
+
     std::optional<IntInfo> intInfo = {};
     std::optional<FloatInfo> floatInfo = {};
     std::optional<FunctionInfo> functionInfo = {};
     std::optional<StructInfo> structInfo = {};
+    std::optional<PointerInfo> pointerInfo = {};
 
 };
 
@@ -184,6 +189,12 @@ public:
     }
 
     std::optional<TypeWrapper> getHigherType(llvm::LLVMContext &context, TypeWrapper right) {
+        if (this->getTypeDetails().pointerInfo && this->getTypeDetails().pointerInfo) {
+            return TypeWrapper::GetPointer(context,
+                                           TypeWrapper::GetInt(context, false, 0)
+            );
+        }
+
         if (this->isNumber() && right.isNumber()) {
 
             if (this->getTypeDetails().floatInfo || right.getTypeDetails().floatInfo) {
@@ -201,6 +212,22 @@ public:
 
         return {};
     }
+
+    static TypeWrapper GetPointer(llvm::LLVMContext &context, std::optional<TypeWrapper> ty) {
+        std::shared_ptr<TypeWrapper> tyPtr;
+        if (ty) {
+            tyPtr = std::make_shared<TypeWrapper>(*ty);
+        }
+
+
+        auto tw = TypeWrapper(llvm::Type::getInt8PtrTy(context));
+        tw.typeDetails.pointerInfo = {
+                tyPtr
+        };
+
+        return tw;
+    }
+
 };
 
 
@@ -280,8 +307,15 @@ public:
     ValueWrapper::ptr castTo(llvm::IRBuilder<> &builder, TypeWrapper ty) const {
         auto RHS = toRHS(builder);
 
+        if (RHS->getType().getTypeDetails().pointerInfo) {
+            if (!ty.getTypeDetails().pointerInfo) {
+                std::cerr << "Can't convert pointer to not pointer" << std::endl;
+            }
+            return RHS;
+        }
+
         if (!RHS->getType().isNumber()) {
-            std::cerr << "Can casts only numbers";
+            std::cerr << "Can' cast this types" << std::endl;
             return nullptr;
         }
 
@@ -397,6 +431,9 @@ public:
 
 
     std::optional<TypeWrapper> GetType(GoParser::Type_Context *typeContext) {
+        if (!typeContext) {
+            std::cerr << "GetType(nil) error";
+        }
         if (typeContext->typeName()) {
             auto typeName = typeContext->typeName()->getText();
             auto ty = TypeWrapper::GetTypeByName(typeName, *TheContext, Types);
@@ -455,7 +492,16 @@ public:
 
             return childType->getArrayOf(count);
         }
+        if (typeContext->typeLit()->pointerType()) {
+            auto pointTo = GetType(typeContext->typeLit()->pointerType()->type_());
+            if (!pointTo) {
+                std::cerr << "Warning: can't find pointer declaration (use void ptr): " << typeContext->getText()
+                          << std::endl;
+            }
 
+            return TypeWrapper::GetPointer(*TheContext, pointTo);
+
+        }
         return {};
     }
 };
@@ -622,6 +668,10 @@ public:
             }
         }
 
+        if (!ctx->block() || !ctx->block()->statementList() ) {
+            std::cerr << "Can't create function " << nameCode << std::endl;
+            return nullptr;
+        }
 
         for (auto statement: ctx->block()->statementList()->statement()) {
             statement->accept(this);
@@ -674,6 +724,14 @@ public:
                     true,
                     ty,
                     llvm::ConstantFP::get(ty.getType(), llvm::APFloat(num))
+            );
+        }
+        if (ctx->NIL_LIT()) {
+            auto ty = TypeWrapper::GetPointer(*context->TheContext, {});
+            return ValueWrapper::Create(
+                    true,
+                    ty,
+                    llvm::ConstantPointerNull::get((llvm::PointerType *) ty.getType())
             );
         }
         return GoParserBaseVisitor::visitBasicLit(ctx);
@@ -786,6 +844,7 @@ public:
     }
 
 
+
     antlrcpp::Any visitPrimaryExpr(GoParser::PrimaryExprContext *ctx) override {
         if (ctx->arguments()) {
             auto function_name = ctx->primaryExpr()->operand()->operandName()->IDENTIFIER()->getText();
@@ -883,11 +942,26 @@ public:
 
             }
 
+
+
+
+            context->TheModule->print(llvm::errs(), nullptr);
+            left->getType().getType()->print(llvm::errs());
+            left->getValue()->print(llvm::errs());
+
+            if (left->isConstant()) {
+                auto valptr = context->Builder->CreateExtractElement(left->getValue(), fieldI, "");
+
+
+                return ValueWrapper::Create(true,
+                                            *fieldType,
+                                            valptr);
+
+            }
             std::vector<llvm::Value *> indexes = {
                     llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, 0)),
                     llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, fieldI))
             };
-
             auto valptr = context->Builder->CreateGEP(left->getType().getType(), left->getValue(), indexes);
 
 
@@ -900,9 +974,17 @@ public:
         return GoParserBaseVisitor::visitPrimaryExpr(ctx);
     }
 
-//    antlrcpp::Any visitChildren(antlr4::tree::ParseTree *node) override {
-//        return (*node->children.rbegin())->accept(this);
-//    }
+
+    antlrcpp::Any visitOperand(GoParser::OperandContext *ctx) override {
+        if (ctx->operandName()) {
+            return ctx->operandName()->accept(this);
+        } else if (ctx->expression()) {
+            return ctx->expression()->accept(this);
+        } else if (ctx->literal()) {
+            return ctx->literal()->accept(this);
+        }
+        return nullptr;
+    }
 
     antlrcpp::Any visitOperandName(GoParser::OperandNameContext *ctx) override {
         auto varName = ctx->IDENTIFIER()->getText();
@@ -995,7 +1077,7 @@ public:
                 }
                 type = TypeWrapper::GetInt(*context->TheContext, false, 1);
             } else if (ctx->NOT_EQUALS()) {
-                if (type.getTypeDetails().intInfo) {
+                if (type.getTypeDetails().intInfo || type.getTypeDetails().pointerInfo) {
                     res = context->Builder->CreateICmpNE(L->getValue(), R->getValue());
                 } else if (type.getTypeDetails().floatInfo) {
                     res = context->Builder->CreateFCmpONE(L->getValue(), R->getValue());
@@ -1033,16 +1115,40 @@ public:
                     res
             );
 
-        } else if (ctx->AMPERSAND()) {
-            ValueWrapper::ptr child = ctx->expression(0)->accept(this);
+        } else if (ctx->unary_op) {
+            if (ctx->AMPERSAND()) {
+                ValueWrapper::ptr child = ctx->expression(0)->accept(this);
 
-            auto value = child->getPointerTo();
-            if (!value) {
-                std::cerr << "Can't get address of: " << ctx->getText() << std::endl;
-                return nullptr;
+                auto value = child->getPointerTo();
+                if (!value) {
+                    std::cerr << "Can't get address of: " << ctx->getText() << std::endl;
+                    return nullptr;
+                }
+
+                return value;
             }
+            if (ctx->STAR()) {
+                ValueWrapper::ptr child = ctx->expression(0)->accept(this);
 
-            return value;
+                if (!child->getType().getTypeDetails().pointerInfo) {
+                    std::cerr << "Can dereference only a pointer: " << ctx->getText() << std::endl;
+                    return nullptr;
+                }
+                if (!child->getType().getTypeDetails().pointerInfo->type) {
+                    std::cerr << "Can dereference only a non-void pointer : " << ctx->getText() << std::endl;
+                    return nullptr;
+                }
+
+                child = child->toRHS(*context->Builder);
+
+//                llvm::Value *value = context->Builder->CreateLoad(
+//                        child->getType().getTypeDetails().pointerInfo->type->getType(),
+//                        child->getValue()
+//                );
+
+                return ValueWrapper::Create(
+                        false, *child->getType().getTypeDetails().pointerInfo->type, child->getValue());
+            }
         }
 
         return GoParserBaseVisitor::visitExpression(ctx);
