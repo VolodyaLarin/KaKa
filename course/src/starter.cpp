@@ -8,7 +8,7 @@
 #include <vector>
 #include <iostream>
 
-#include <execinfo.h>
+#include <chrono>
 
 extern "C" int main_main();
 extern "C" void *ALLOCATE(size_t size, size_t number_of_links, ...);
@@ -155,7 +155,8 @@ void GC_CALL(size_t size, ...) {
 
 
 int main() {
-    clock_t start_time = clock();
+    auto start_time = std::chrono::high_resolution_clock::now();
+
     HEAP = new std::map<void *, HeapEntry>;
     SHADOW_STACK = new std::vector<ShadowStackEntry>;
 
@@ -163,9 +164,9 @@ int main() {
     int res = main_main();
     GC_CALL(0);
 
-    clock_t end_time = clock();
 
     delete SHADOW_STACK;
     delete HEAP;
-    printf("\n\nRuns %.2lf ms \nResult code: %d\n", (1000.0 * (end_time - start_time)) / CLOCKS_PER_SEC, res);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    printf("\n\nRuns %.2ld ms \nResult code: %d\n", (std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time)).count() , res);
 }
