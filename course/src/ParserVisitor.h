@@ -945,12 +945,13 @@ public:
             }
 
             std::vector<llvm::Value *> ArgsV;
+            if (ctx->arguments()->expressionList()) {
+                for (auto expr: ctx->arguments()->expressionList()->expression()) {
+                    ValueWrapper::ptr value = expr->accept(this);
 
-            for (auto expr: ctx->arguments()->expressionList()->expression()) {
-                ValueWrapper::ptr value = expr->accept(this);
-
-                // @todo make cast
-                ArgsV.emplace_back(value->toRHS(*context->Builder)->getValue());
+                    // @todo make cast
+                    ArgsV.emplace_back(value->toRHS(*context->Builder)->getValue());
+                }
             }
 
             context->Builder->CreateCall(context->Functions.find("main_GC_PUSHSTACK")->second.Function, {});
@@ -981,7 +982,6 @@ public:
                           llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, gcVals.size()))
             );
             context->Builder->CreateCall(context->Functions.find("main_GC_CALL")->second.Function, gcVals);
-
 
 
             if (!retType) {

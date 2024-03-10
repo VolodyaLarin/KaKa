@@ -14,6 +14,20 @@ func newNode(data int, next *Node) *Node {
 	return &node
 }
 
+func inputList() *Node {
+	var list *Node = nil
+	var size int
+	printf("Input size: ")
+	scanf("%d", &size)
+	printf("Write values: ")
+	for i := 0; i < size; i = i + 1 {
+		var data int
+		scanf("%d", &data)
+		list = newNode(data, list)
+	}
+	return list
+}
+
 func printNode(list *Node) {
 	var node *Node = list
 
@@ -38,7 +52,7 @@ func reverseNode(list *Node) *Node {
 }
 
 func main() int {
-	var head *Node = newNode(228, newNode(11, newNode(12, newNode(13, nil))))
+	var head *Node = inputList()
 
 	printNode(head)
 
