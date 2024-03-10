@@ -12,8 +12,8 @@ func main() {
 	}
 
 	printf("\n\n%d %d %d \n%d %d %d\n",
-	    twoD[0][0], twoD[0][1], twoD[0][2],
-	    twoD[1][0], twoD[1][1], twoD[1][2],
+		twoD[0][0], twoD[0][1], twoD[0][2],
+		twoD[1][0], twoD[1][1], twoD[1][2],
 	)
 
 }

@@ -7,11 +7,11 @@ type Node struct {
 	nextNode *Node
 }
 
-func newNode(data int, next *Node) Node {
+func newNode(data int, next *Node) *Node {
 	var node Node
 	node.data = data
 	node.nextNode = next
-	return node
+	return &node
 }
 
 func printNode(list *Node) {
@@ -26,7 +26,7 @@ func printNode(list *Node) {
 }
 
 func reverseNode(list *Node) *Node {
-	var newList *node = nil
+	var newList *Node = nil
 	var node *Node = list
 	for 0; node != nil; 0 {
 		var tmpNode *Node = (*node).nextNode
@@ -38,17 +38,11 @@ func reverseNode(list *Node) *Node {
 }
 
 func main() int {
-	var node_container [5]Node
+	var head *Node = newNode(228, newNode(11, newNode(12, newNode(13, nil))))
 
-	node_container[0] = newNode(228, &(node_container[1]))
-	node_container[1] = newNode(11, &(node_container[2]))
-	node_container[2] = newNode(12, &(node_container[3]))
-	node_container[3] = newNode(13, &(node_container[4]))
-	node_container[4] = newNode(14, nil)
+	printNode(head)
 
-	printNode(&(node_container[0]))
-
-	var newList *Node = reverseNode(&(node_container[0]))
+	var newList *Node = reverseNode(head)
 
 	printNode(newList)
 

@@ -228,6 +228,36 @@ public:
         return tw;
     }
 
+    size_t getSizeOf(const llvm::DataLayout &dl) {
+        return dl.getTypeSizeInBits(Type) / 8;
+    }
+
+    std::vector<size_t> getPtrPos(const llvm::DataLayout &dl) {
+        if (typeDetails.structInfo) {
+            auto Sl = dl.getStructLayout((llvm::StructType *) Type);
+            std::vector<size_t> res = {};
+            {
+                size_t i = 0;
+                for (auto field: typeDetails.structInfo->fields) {
+                    if (field.typeDetails.pointerInfo) {
+                        res.emplace_back(Sl->getElementOffset(i));
+                    } else if (field.typeDetails.structInfo) {
+                        size_t offset = Sl->getElementOffset(i);
+                        for (auto r: field.getPtrPos(dl)) {
+                            res.emplace_back(r + offset);
+                        }
+                    }
+                    ++i;
+                }
+            }
+            return res;
+        }
+        if (typeDetails.pointerInfo) {
+            return {0};
+        }
+        return {};
+    }
+
 };
 
 
@@ -345,9 +375,10 @@ public:
 };
 
 class StackController {
+public:
+
     std::vector<std::pair<llvm::BasicBlock *, std::map<std::string, ValueWrapper::ptr>>> Stack = {};
 
-public:
     void PushLevel(llvm::BasicBlock *block) {
         Stack.emplace_back(block, std::map<std::string, ValueWrapper::ptr>{});
     }
@@ -530,6 +561,31 @@ public:
                                         true
                                 ), nullptr
                 ),
+                FunctionWrapper("", "ALLOCATE", TypeWrapper::GetFunction(
+                                        *context->TheContext,
+                                        TypeWrapper::GetPointer(*context->TheContext, {}),
+                                        std::vector<TypeWrapper>{
+                                                TypeWrapper::GetInt(*context->TheContext, true, 32)
+                                        },
+                                        false
+                                ), nullptr
+                ),
+                FunctionWrapper("", "GC_CALL", TypeWrapper::GetFunction(
+                                        *context->TheContext,
+                                        {},
+                                        std::vector<TypeWrapper>{
+                                                TypeWrapper::GetInt(*context->TheContext, true, 32)
+                                        },
+                                        true
+                                ), nullptr
+                ),
+                FunctionWrapper("", "GC_PUSHSTACK", TypeWrapper::GetFunction(
+                                        *context->TheContext,
+                                        {},
+                                        {},
+                                        false
+                                ), nullptr
+                ),
         };
 
 
@@ -668,7 +724,7 @@ public:
             }
         }
 
-        if (!ctx->block() || !ctx->block()->statementList() ) {
+        if (!ctx->block() || !ctx->block()->statementList()) {
             std::cerr << "Can't create function " << nameCode << std::endl;
             return nullptr;
         }
@@ -678,6 +734,7 @@ public:
         }
 
         context->stackController.PopLevel();
+
 
         if (!retT) context->Builder->CreateRetVoid();
 
@@ -815,10 +872,8 @@ public:
 
         std::string name = ctx->varSpec()[0]->identifierList()->IDENTIFIER(0)->getText();
 
-        llvm::IRBuilder<> TmpB(context->stackController.GetBlock(), context->stackController.GetBlock()->begin());
 
-
-        auto llvmVar = TmpB.CreateAlloca(ty->getType());
+        llvm::Value *llvmVar = AllocateMem(*ty);
         llvmVar->setName(name);
 
 
@@ -843,6 +898,25 @@ public:
         return nullptr;
     }
 
+    llvm::Value *AllocateMem(TypeWrapper ty) {
+        // llvm::IRBuilder<> TmpB(context->stackController.GetBlock(), context->stackController.GetBlock()->begin());
+        // auto llvmVar = TmpB.CreateAlloca(ty->getType());
+
+        auto offsets = ty.getPtrPos(context->TheModule->getDataLayout());
+        std::vector<llvm::Value *> args = {
+                llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, ty.getSizeOf(
+                        context->TheModule->getDataLayout()
+                ))),
+                llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, offsets.size()))
+        };
+        for (auto offset: offsets) {
+            args.push_back(
+                    llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, offset))
+            );
+        }
+
+        return context->Builder->CreateCall(context->Functions.find("main_ALLOCATE")->second.Function, args);
+    }
 
 
     antlrcpp::Any visitPrimaryExpr(GoParser::PrimaryExprContext *ctx) override {
@@ -879,10 +953,36 @@ public:
                 ArgsV.emplace_back(value->toRHS(*context->Builder)->getValue());
             }
 
+            context->Builder->CreateCall(context->Functions.find("main_GC_PUSHSTACK")->second.Function, {});
+
             llvm::Value *value = context->Builder->CreateCall(func->second.Function, ArgsV);
 
-
+            std::vector<llvm::Value *> gcVals = {};
             auto retType = func->second.type.getTypeDetails().functionInfo->retType;
+
+            if (retType) {
+                if (retType->getTypeDetails().pointerInfo) {
+                    gcVals.push_back(value);
+                } else if (retType->getTypeDetails().structInfo) {
+                    std::cerr << "Can't safe struct" << std::endl;
+                }
+            }
+
+
+//            for (auto bl: context->stackController.Stack) {
+//                for (auto var: bl.second) {
+//                    if (!var.second->isConstant() || var.second->getType().getTypeDetails().pointerInfo) {
+//                        gcVals.push_back(var.second->getValue());
+//                        continue;
+//                    }
+//                }
+//            }
+            gcVals.insert(gcVals.begin(),
+                          llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, gcVals.size()))
+            );
+            context->Builder->CreateCall(context->Functions.find("main_GC_CALL")->second.Function, gcVals);
+
+
 
             if (!retType) {
                 return nullptr;
@@ -943,11 +1043,9 @@ public:
             }
 
 
-
-
-            context->TheModule->print(llvm::errs(), nullptr);
-            left->getType().getType()->print(llvm::errs());
-            left->getValue()->print(llvm::errs());
+//            context->TheModule->print(llvm::errs(), nullptr);
+//            left->getType().getType()->print(llvm::errs());
+//            left->getValue()->print(llvm::errs());
 
             if (left->isConstant()) {
                 auto valptr = context->Builder->CreateExtractElement(left->getValue(), fieldI, "");
@@ -1161,11 +1259,14 @@ public:
         expr = expr->toRHS(*context->Builder);
 
 
-        llvm::IRBuilder<> TmpB(context->stackController.GetBlock(), context->stackController.GetBlock()->begin());
-        auto llvmVar = TmpB.CreateAlloca(expr->getType().getType());
+//        llvm::IRBuilder<> TmpB(context->stackController.GetBlock(), context->stackController.GetBlock()->begin());
+//        auto llvmVar = TmpB.CreateAlloca(expr->getType().getType());
+
+        llvm::Value *llvmVar = AllocateMem(expr->getType());
+        llvmVar->setName(name);
+
         context->Builder->CreateStore(expr->getValue(), llvmVar);
 
-        llvmVar->setName(name);
 
         context->stackController.AddNamedValue(
                 name, ValueWrapper::Create(
