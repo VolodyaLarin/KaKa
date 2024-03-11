@@ -8,9 +8,9 @@ echo Build $1
 echo Make object go
 llc -filetype=obj "$1.ll"  --debugger-tune=gdb --data-sections --debug-entry-values --debug-info-correlate -o ./file.o
 echo Make starter
-g++ -c starter.cpp -o3 -o starter.o -ggdb
+clang++ -c starter.cpp -o starter.o -ggdb
 echo Prepare executable
-g++ starter.o file.o
+clang++ starter.o file.o
 echo ========
 #./a.out
 

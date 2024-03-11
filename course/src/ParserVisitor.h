@@ -49,7 +49,9 @@ struct TypeDetails {
     struct StructInfo {
         std::vector<TypeWrapper> fields;
         std::vector<std::string> fieldNames;
+        bool isInterface = false;
     };
+
 
     struct PointerInfo {
         std::shared_ptr<TypeWrapper> type;
@@ -60,7 +62,6 @@ struct TypeDetails {
     std::optional<FunctionInfo> functionInfo = {};
     std::optional<StructInfo> structInfo = {};
     std::optional<PointerInfo> pointerInfo = {};
-
 };
 
 
@@ -113,7 +114,8 @@ public:
 
     static TypeWrapper GetStruct(
             llvm::LLVMContext &TheContext,
-            std::vector<std::pair<std::string, TypeWrapper>> &fields
+            std::vector<std::pair<std::string, TypeWrapper>> &fields,
+            bool isInterface = false
     ) {
         std::vector<TypeWrapper> fieldsTypes;
         std::vector<llvm::Type *> llvmTypes;
@@ -128,7 +130,8 @@ public:
         auto ty = TypeWrapper(llvm::StructType::get(TheContext, llvmTypes));
         ty.typeDetails.structInfo = TypeDetails::StructInfo{
                 fieldsTypes,
-                fieldsNames
+                fieldsNames,
+                isInterface
         };
 
         return std::move(ty);
@@ -175,7 +178,7 @@ public:
     }
 
     TypeWrapper getPointerTo() {
-        auto ty =  TypeWrapper(
+        auto ty = TypeWrapper(
                 Type->getPointerTo()
 
         );
@@ -248,6 +251,10 @@ public:
 
     std::vector<size_t> getPtrPos(const llvm::DataLayout &dl) {
         if (typeDetails.structInfo) {
+            if (typeDetails.structInfo->isInterface) {
+                return {0};
+            }
+
             auto Sl = dl.getStructLayout((llvm::StructType *) Type);
             std::vector<size_t> res = {};
             {
@@ -274,7 +281,7 @@ public:
 
 };
 
-
+class FunctionWrapper;
 
 
 class ValueWrapper {
@@ -286,8 +293,10 @@ private:
     llvm::Value *Value;
     ValueWrapper::ptr Binding;
 
-    ValueWrapper(bool isConstant, TypeWrapper typeW, llvm::Value *value, ValueWrapper::ptr binding) : IsConstant(isConstant), Type(typeW),
-                                                                           Value(value), Binding(binding) {}
+    ValueWrapper(bool isConstant, TypeWrapper typeW, llvm::Value *value, ValueWrapper::ptr binding) : IsConstant(
+            isConstant), Type(typeW),
+                                                                                                      Value(value),
+                                                                                                      Binding(binding) {}
 
 public:
 
@@ -325,7 +334,8 @@ public:
         return ValueWrapper::Create(
                 true,
                 getType(),
-                value
+                value,
+                Binding
         );
     }
 
@@ -399,6 +409,13 @@ public:
         return ValueWrapper::Create(true, type, Function);
     }
 
+    ValueWrapper::ptr getPointerValue(llvm::LLVMContext &context) {
+        auto ty = type.getPointerTo();
+        return ValueWrapper::Create(true, ty,
+                                    llvm::ConstantExpr::getBitCast(Function, llvm::Type::getInt8PtrTy(context))
+        );
+    }
+
     ValueWrapper::ptr bind(ValueWrapper::ptr binder) {
         return ValueWrapper::Create(true, type, Function, binder);
     }
@@ -463,9 +480,11 @@ public:
     [[nodiscard]] std::string GetMethodId(const std::string &name, const std::string &struct_name) const {
         return struct_name + "__struct__" + name;
     }
+
     [[nodiscard]] std::string GetFunctionID(const std::string &name) const {
         return this->ModuleName + '_' + name;
     }
+
 
     Context() {
         TheContext = std::make_shared<llvm::LLVMContext>();
@@ -514,6 +533,49 @@ public:
             std::cerr << "Smth go wrong :" << typeContext->getText() << std::endl;
             return {};
         }
+        if (typeContext->typeLit()->interfaceType()) {
+            auto interfaceTN = typeContext->typeLit()->interfaceType();
+
+            std::vector<std::pair<std::string, TypeWrapper>> fields = {
+                    {"_", TypeWrapper::GetPointer(*TheContext, {})},
+            };
+
+            for (auto &method: interfaceTN->methodSpec()) {
+                auto name = method->IDENTIFIER()->getText();
+                std::optional<TypeWrapper> result;
+
+                if (method->result()) {
+                    result = GetType(method->result()->type_());
+                    if (!result) {
+                        std::cerr << "Can't compute type:" << method->getText() << std::endl;
+                        return {};
+                    }
+
+                }
+
+                std::vector<TypeWrapper> params = {
+                        TypeWrapper::GetPointer(*TheContext, {})
+                };
+                for (auto decl: method->parameters()->parameterDecl()) {
+                    auto ty = GetType(decl->type_());
+                    if (!ty) {
+                        std::cerr << "Can't compute type:" << method->getText() << std::endl;
+                        return {};
+                    }
+                    params.push_back(*ty);
+                }
+
+                auto func = TypeWrapper::GetFunction(
+                        *TheContext, result, params
+                ).getPointerTo();
+                fields.emplace_back(
+                        name, func
+                );
+            }
+
+            return TypeWrapper::GetStruct(*TheContext, fields, true);
+        }
+
         if (typeContext->typeLit()->structType()) {
             auto structTN = typeContext->typeLit()->structType();
 
@@ -574,6 +636,65 @@ public:
 class ParserVisitor : public GoParserBaseVisitor {
 
 public:
+
+    ValueWrapper::ptr CastToInterface(ValueWrapper::ptr interface, ValueWrapper::ptr value) {
+        auto ty = interface->getType();
+        if (ty.getTypeDetails().structInfo->isInterface && value->getType().getTypeDetails().structInfo) {
+            if (value->isConstant()) {
+                std::cerr << "Can't convert const struct to interface" << std::endl;
+                return nullptr;
+            }
+            if (interface->isConstant()) {
+                std::cerr << "Can't convert struct to interface; Interface must be RHS" << std::endl;
+                return nullptr;
+            }
+            auto SI = ty.getTypeDetails().structInfo;
+
+            auto mem = interface->getValue();
+
+            std::vector<llvm::Value *> values = {
+                    value->getValue(),
+            };
+            for (auto field: SI->fieldNames) {
+                if (field == "_") {
+                    continue;
+                }
+
+                auto method = context->Functions.find(
+                        context->GetFunctionID(context->GetMethodId(field, value->getType().getName()))
+                );
+                if (method == context->Functions.end()) {
+                    std::cerr << "Can't find method " << field << ":"
+                              << context->GetFunctionID(context->GetMethodId(field, value->getType().getName()))
+                              << std::endl;
+                }
+
+                values.push_back(method->second.Function);
+            }
+
+
+            {
+                size_t fieldI = 0;
+                for (auto value: values) {
+                    std::vector<llvm::Value *> indexes = {
+                            llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, 0)),
+                            llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, fieldI))
+                    };
+                    auto valptr = context->Builder->CreateGEP(ty.getType(), mem, indexes);
+
+                    context->Builder->CreateStore(value, valptr);
+                    fieldI++;
+                }
+            }
+
+            return interface;
+
+        }
+
+        return nullptr;
+    }
+
+
     void GenereateBuildins() {
         std::vector<FunctionWrapper> functions = {
                 FunctionWrapper("", "printf", TypeWrapper::GetFunction(
@@ -640,22 +761,22 @@ public:
 
         GenereateBuildins();
 
-        for (auto & child: ctx->children) {
+        for (auto &child: ctx->children) {
             child->accept(this);
         }
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
     antlrcpp::Any visitImportDecl(GoParser::ImportDeclContext *ctx) override {
         std::cerr << "Warning: Import statement is not supported: " << ctx->getText() << std::endl;
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
     antlrcpp::Any visitTypeDecl(GoParser::TypeDeclContext *ctx) override {
         if (ctx->typeSpec(0)->aliasDecl()) {
             std::cerr << "Warning: Aliases is not supported: " << ctx->getText();
-            return nullptr;
+            return ValueWrapper::ptr(nullptr);
         }
         auto def = ctx->typeSpec(0)->typeDef();
 
@@ -663,7 +784,7 @@ public:
         auto type = context->GetType(def->type_());
         if (!type) {
             std::cerr << "Error: Can't declare type " << defName << std::endl;
-            return nullptr;
+            return ValueWrapper::ptr(nullptr);
         }
         type->setName(defName);
 
@@ -672,10 +793,12 @@ public:
                                       *type
                               });
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
-    std::optional<FunctionWrapper> makeFunction(antlr4::tree::ParseTree *ctx, GoParser::ReceiverContext *receiver,  antlr4::tree::TerminalNode *IDENTIFIER, GoParser::SignatureContext *signature, GoParser::BlockContext *block) {
+    std::optional<FunctionWrapper> makeFunction(antlr4::tree::ParseTree *ctx, GoParser::ReceiverContext *receiver,
+                                                antlr4::tree::TerminalNode *IDENTIFIER,
+                                                GoParser::SignatureContext *signature, GoParser::BlockContext *block) {
         std::vector<TypeWrapper> args;
         std::optional<TypeWrapper> retT = {};
 
@@ -700,8 +823,8 @@ public:
             }
 
             if (!recvTy->getTypeDetails().structInfo) {
-                    std::cerr << "Error: can't create not a struct method: " << signature->getText() << std::endl;
-                    return {};
+                std::cerr << "Error: can't create not a struct method: " << signature->getText() << std::endl;
+                return {};
             }
 
             args.push_back(recvTy->getPointerTo());
@@ -776,13 +899,13 @@ public:
             }
 
 
-                context->stackController.AddNamedValue(
-                        nameArg,
-                        ValueWrapper::Create(
-                                false,
-                                argTy,
-                                argVal
-                        ));
+            context->stackController.AddNamedValue(
+                    nameArg,
+                    ValueWrapper::Create(
+                            false,
+                            argTy,
+                            argVal
+                    ));
 
         }
 
@@ -809,7 +932,7 @@ public:
 
 
         if (!block || !block->statementList()) {
-            std::cerr << "Error: Can't create function " << nameCode << ". Not found function body."<< std::endl;
+            std::cerr << "Error: Can't create function " << nameCode << ". Not found function body." << std::endl;
             return {};
         }
 
@@ -830,7 +953,7 @@ public:
     antlrcpp::Any visitFunctionDecl(GoParser::FunctionDeclContext *ctx) override {
         return makeFunction(
                 ctx, nullptr, ctx->IDENTIFIER(), ctx->signature(), ctx->block()
-                );
+        );
     }
 
 
@@ -918,7 +1041,7 @@ public:
         auto llvmType = context->GetType(typeNode);
         if (!llvmType) {
             std::cerr << "Can't find type : " << ctx->getText() << std::endl;
-            return nullptr;
+            return ValueWrapper::ptr(nullptr);
         }
 
         ValueWrapper::ptr expr = ctx->constSpec(0)->expressionList()->expression(0)->accept(this);
@@ -929,17 +1052,17 @@ public:
                 expr
         );
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
     antlrcpp::Any visitReturnStmt(GoParser::ReturnStmtContext *ctx) override {
         if (ctx->expressionList()->expression().empty()) {
             context->Builder->CreateRetVoid();
-            return nullptr;
+            return ValueWrapper::ptr(nullptr);
         }
         if (ctx->expressionList()->expression().size() > 1) {
             std::cerr << "Multiple return is not supported: " << ctx->getText() << std::endl;
-            return nullptr;
+            return ValueWrapper::ptr(nullptr);
         }
 
         ValueWrapper::ptr expression = ctx->expressionList()->expression(0)->accept(this);
@@ -947,7 +1070,7 @@ public:
 
         context->Builder->CreateRet(expression->getValue());
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
 
@@ -957,7 +1080,7 @@ public:
         auto ty = context->GetType(typeNode);
         if (!ty) {
             std::cerr << "Can't find type : " << ctx->getText() << std::endl;
-            return nullptr;
+            return ValueWrapper::ptr(nullptr);
         }
 
         std::string name = ctx->varSpec()[0]->identifierList()->IDENTIFIER(0)->getText();
@@ -966,26 +1089,32 @@ public:
         llvm::Value *llvmVar = AllocateMem(*ty);
         llvmVar->setName(name);
 
+        auto mem = ValueWrapper::Create(
+                false,
+                *ty,
+                llvmVar
+        );
 
         context->stackController.AddNamedValue(
                 ctx->varSpec(0)->identifierList()->IDENTIFIER(0)->getText(),
-                ValueWrapper::Create(
-                        false,
-                        *ty,
-                        llvmVar
-                )
+                mem
         );
 
         if (!ctx->varSpec(0)->expressionList()) {
-            return nullptr;
+            return ValueWrapper::ptr(nullptr);
         }
 
         ValueWrapper::ptr expr = ctx->varSpec(0)->expressionList()->expression(0)->accept(this);
+        if (ty->getTypeDetails().structInfo && ty->getTypeDetails().structInfo->isInterface) {
+            expr = CastToInterface(mem, expr);
+            return ValueWrapper::ptr(nullptr);
+        }
+
         expr = expr->toRHS(*context->Builder);
 
         context->Builder->CreateStore(expr->getValue(), llvmVar);
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
     llvm::Value *AllocateMem(TypeWrapper ty) {
@@ -1012,31 +1141,53 @@ public:
     antlrcpp::Any visitPrimaryExpr(GoParser::PrimaryExprContext *ctx) override {
         if (ctx->arguments()) {
             ValueWrapper::ptr function = ctx->primaryExpr()->accept(this);
+            if (!function) {
+                // try check casting
+                auto function_name = ctx->primaryExpr()->getText();
+                auto Type2Cast = TypeWrapper::GetTypeByName(function_name, *context->TheContext, context->Types);
+                if (Type2Cast) {
+                    if (ctx->arguments()->expressionList()->expression().size() != 1) {
+                        std::cerr << "can't cast more than one value " << function_name << " : " << ctx->getText() << std::endl;
+                        return ValueWrapper::ptr(nullptr);
+                    }
+
+                    ValueWrapper::ptr RHS = ctx->arguments()->expressionList()->expression(0)->accept(this);
+                    return RHS->castTo(*context->Builder, *Type2Cast);
+                }
+                std::cerr << "Can't find function " << function_name << ": " << ctx->getText() << std::endl;
+            }
+
+            if (function && function->getType().getTypeDetails().pointerInfo) {
+                function = function->toRHS(*context->Builder);
+                auto funcT = function->getType().getTypeDetails().pointerInfo->type;
+//                llvm::Value *value = context->Builder->CreateBitCast(function->getValue(), funcT->getType());
+                function = ValueWrapper::Create(
+                        true,
+                        *funcT,
+                        function->getValue(),
+                        function->getBinding()
+                );
+//                value->print(llvm::errs());
+            }
 
             if (!function || !function->getType().getTypeDetails().functionInfo) {
                 std::cerr << "Can't call not a function :" << ctx->getText() << std::endl;
-                return nullptr;
+                return ValueWrapper::ptr(nullptr);
             }
 
-//            auto Type2Cast = function->getType().getTypeDetails().functionInfo->retType;
-//            if (Type2Cast) {
-//                 @todo: remember what's going on
-//                if (ctx->arguments()->expressionList()->expression().size() != 1) {
-//                    std::cerr << "can't cast more than one value: " << ctx->getText()
-//                              << std::endl;
-//                    return nullptr;
-//                }
-//
-//                ValueWrapper::ptr RHS = ctx->arguments()->expressionList()->expression(0)->accept(this);
-//                return RHS->castTo(*context->Builder, *Type2Cast);
-//            }
+
+
 
 
 
             std::vector<llvm::Value *> ArgsV;
 
             if (function->getBinding()) {
-                ArgsV.emplace_back(function->getBinding()->toRHS(*context->Builder)->getValue());
+                auto binding = function->getBinding()->toRHS(*context->Builder);
+//                if (binding->getType().getTypeDetails().structInfo->isInterface) {
+//                    binding = ValueWrapper::Create(false, TypeWrapper::GetPointer(*context->TheContext, {}), binding->getValue())->toRHS(*context->Builder);
+//                }
+                ArgsV.emplace_back(binding->getValue());
             }
 
             if (ctx->arguments()->expressionList()) {
@@ -1050,7 +1201,10 @@ public:
 
             context->Builder->CreateCall(context->Functions.find("main_GC_PUSHSTACK")->second.Function, {});
 
-            llvm::Value *value = context->Builder->CreateCall((llvm::Function *)function->getValue(), ArgsV);
+            llvm::Value *value = context->Builder->CreateCall(llvm::FunctionCallee(
+                    (llvm::FunctionType *) function->getType().getType(),
+                    function->getValue()
+            ), ArgsV);
 
             std::vector<llvm::Value *> gcVals = {};
             auto retType = function->getType().getTypeDetails().functionInfo->retType;
@@ -1070,7 +1224,7 @@ public:
 
 
             if (!retType) {
-                return nullptr;
+                return ValueWrapper::ptr(nullptr);
             }
 
             return ValueWrapper::Create(
@@ -1106,17 +1260,18 @@ public:
                 left = left->toRHS(*context->Builder);
                 left = ValueWrapper::Create(
                         false, *left->getType().getTypeDetails().pointerInfo->type, left->getValue()
-                        );
+                );
             }
             auto structInfo = left->getType().getTypeDetails().structInfo;
             if (!structInfo) {
                 std::cerr << "Dot operation supports only for structs: " << ctx->getText() << std::endl;
-                return nullptr;
+                return ValueWrapper::ptr(nullptr);
             }
 
             auto fieldName = ctx->IDENTIFIER()->getText();
 
-            auto method = context->Functions.find(context->GetFunctionID(context->GetMethodId(fieldName, left->getType().getName())));
+            auto method = context->Functions.find(
+                    context->GetFunctionID(context->GetMethodId(fieldName, left->getType().getName())));
             if (method != context->Functions.end()) {
                 return method->second.bind(left->getPointerTo());
             }
@@ -1134,7 +1289,7 @@ public:
 
             if (!fieldType) {
                 std::cerr << "Can't find struct field " << fieldName << ": " << ctx->getText();
-                return nullptr;
+                return ValueWrapper::ptr(nullptr);
             }
 
 
@@ -1153,10 +1308,22 @@ public:
             };
             auto valptr = context->Builder->CreateGEP(left->getType().getType(), left->getValue(), indexes);
 
+            auto binding = left;
+            if (structInfo->isInterface) {
+                std::vector<llvm::Value *> indexes = {
+                        llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, 0)),
+                        llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, 0))
+                };
+                auto valptr = context->Builder->CreateGEP(binding->getType().getType(), binding->getValue(), indexes);
+
+                binding = ValueWrapper::Create(false, TypeWrapper::GetPointer(*context->TheContext, {}), valptr);
+            }
 
             return ValueWrapper::Create(false,
                                         *fieldType,
-                                        valptr);
+                                        valptr,
+                                        binding
+            );
 
         }
 
@@ -1178,7 +1345,7 @@ public:
         } else if (ctx->literal()) {
             return ctx->literal()->accept(this);
         }
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
     antlrcpp::Any visitOperandName(GoParser::OperandNameContext *ctx) override {
@@ -1192,7 +1359,7 @@ public:
 
         if (!value) {
             std::cerr << "Not found var name " << varName << " : " << ctx->getText() << std::endl;
-            return nullptr;
+            return ValueWrapper::ptr(nullptr);
         }
 
         return value;
@@ -1208,7 +1375,7 @@ public:
 
         context->Builder->CreateStore(expr->toRHS(*context->Builder)->getValue(), lexpr->getValue());
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
     antlrcpp::Any visitExpression(GoParser::ExpressionContext *ctx) override {
@@ -1223,7 +1390,7 @@ public:
             if (!ComputedType) {
                 std::cerr << "Can't compute type of result operation (may be it's not a numbers...): " << ctx->getText()
                           << std::endl;
-                return nullptr;
+                return ValueWrapper::ptr(nullptr);
             }
 
 
@@ -1283,7 +1450,11 @@ public:
                 }
                 type = TypeWrapper::GetInt(*context->TheContext, false, 1);
             } else if (ctx->STAR()) {
-                res = context->Builder->CreateMul(L->getValue(), R->getValue());
+                if (type.getTypeDetails().intInfo) {
+                    res = context->Builder->CreateMul(L->getValue(), R->getValue());
+                } else if (type.getTypeDetails().floatInfo) {
+                    res = context->Builder->CreateFMul(L->getValue(), R->getValue());
+                }
             } else if (ctx->DIV()) {
                 if (type.getTypeDetails().intInfo) {
                     if (type.getTypeDetails().intInfo->isSigned) {
@@ -1305,7 +1476,7 @@ public:
 
             if (!res) {
                 std::cerr << "This operation is not supported: " << ctx->getText() << std::endl;
-                return nullptr;
+                return ValueWrapper::ptr(nullptr);
             }
 
             return ValueWrapper::Create(
@@ -1321,7 +1492,7 @@ public:
                 auto value = child->getPointerTo();
                 if (!value) {
                     std::cerr << "Can't get address of: " << ctx->getText() << std::endl;
-                    return nullptr;
+                    return ValueWrapper::ptr(nullptr);
                 }
 
                 return value;
@@ -1331,11 +1502,11 @@ public:
 
                 if (!child->getType().getTypeDetails().pointerInfo) {
                     std::cerr << "Can dereference only a pointer: " << ctx->getText() << std::endl;
-                    return nullptr;
+                    return ValueWrapper::ptr(nullptr);
                 }
                 if (!child->getType().getTypeDetails().pointerInfo->type) {
                     std::cerr << "Can dereference only a non-void pointer : " << ctx->getText() << std::endl;
-                    return nullptr;
+                    return ValueWrapper::ptr(nullptr);
                 }
 
                 child = child->toRHS(*context->Builder);
@@ -1372,7 +1543,7 @@ public:
                 )
         );
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
     antlrcpp::Any visitIfStmt(GoParser::IfStmtContext *ctx) override {
@@ -1411,7 +1582,7 @@ public:
         parent->insert(parent->end(), MergeBB);
         context->Builder->SetInsertPoint(MergeBB);
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 
     antlrcpp::Any visitForStmt(GoParser::ForStmtContext *ctx) override {
@@ -1449,7 +1620,7 @@ public:
 
         context->Builder->SetInsertPoint(AfterBB);
 
-        return nullptr;
+        return ValueWrapper::ptr(nullptr);
     }
 };
 
