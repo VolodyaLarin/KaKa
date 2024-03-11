@@ -67,6 +67,7 @@ struct TypeDetails {
 class TypeWrapper {
     TypeDetails typeDetails = {};
     llvm::Type *Type;
+    std::string Name;
 
     explicit TypeWrapper(llvm::Type *type) : Type(type) {
 
@@ -117,7 +118,6 @@ public:
         }
 
         auto ty = TypeWrapper(llvm::StructType::get(TheContext, llvmTypes));
-
         ty.typeDetails.structInfo = TypeDetails::StructInfo{
                 fieldsTypes,
                 fieldsNames
@@ -261,18 +261,6 @@ public:
 };
 
 
-class FunctionWrapper {
-public:
-
-    std::string ModuleId = "";
-    std::string Name = "";
-
-    TypeWrapper type;
-    llvm::Function *Function;
-
-    FunctionWrapper(const std::string &moduleId, const std::string &name, TypeWrapper type, llvm::Function *function)
-            : ModuleId(moduleId), Name(name), type(type), Function(function) {}
-};
 
 
 class ValueWrapper {
@@ -374,6 +362,24 @@ public:
     }
 };
 
+
+class FunctionWrapper {
+public:
+
+    std::string ModuleId = "";
+    std::string Name = "";
+
+    TypeWrapper type;
+    llvm::Function *Function;
+
+    FunctionWrapper(const std::string &moduleId, const std::string &name, TypeWrapper type, llvm::Function *function)
+            : ModuleId(moduleId), Name(name), type(type), Function(function) {}
+
+    ValueWrapper::ptr getValue() {
+        return ValueWrapper::Create(true, type, Function);
+    }
+};
+
 class StackController {
 public:
 
@@ -400,7 +406,7 @@ public:
         return true;
     }
 
-    ValueWrapper::ptr GetNamedValue(const std::string name) {
+    ValueWrapper::ptr GetNamedValue(const std::string name, std::string module = std::string()) {
         for (auto block = Stack.rbegin(); block != Stack.rend(); block++) {
             if (block->second.find(name) != block->second.end()) {
                 return block->second.find(name)->second;
@@ -921,28 +927,27 @@ public:
 
     antlrcpp::Any visitPrimaryExpr(GoParser::PrimaryExprContext *ctx) override {
         if (ctx->arguments()) {
-            auto function_name = ctx->primaryExpr()->operand()->operandName()->IDENTIFIER()->getText();
+            ValueWrapper::ptr function = ctx->primaryExpr()->accept(this);
 
-
-            auto Type2Cast = TypeWrapper::GetTypeByName(function_name, *context->TheContext, context->Types);
-            if (Type2Cast) {
-                if (ctx->arguments()->expressionList()->expression().size() != 1) {
-                    std::cerr << "can't cast more than one value " << function_name << " : " << ctx->getText()
-                              << std::endl;
-                    return nullptr;
-                }
-
-                ValueWrapper::ptr RHS = ctx->arguments()->expressionList()->expression(0)->accept(this);
-                return RHS->castTo(*context->Builder, *Type2Cast);
-            }
-
-
-            auto func = context->Functions.find(context->GetFunctionID(function_name));
-
-            if (func == context->Functions.end()) {
-                std::cerr << "not found function " << function_name << " : " << ctx->getText() << std::endl;
+            if (!function || !function->getType().getTypeDetails().functionInfo) {
+                std::cerr << "Can't call not a function :" << ctx->getText() << std::endl;
                 return nullptr;
             }
+
+//            auto Type2Cast = function->getType().getTypeDetails().functionInfo->retType;
+//            if (Type2Cast) {
+//                 @todo: remember what's going on
+//                if (ctx->arguments()->expressionList()->expression().size() != 1) {
+//                    std::cerr << "can't cast more than one value: " << ctx->getText()
+//                              << std::endl;
+//                    return nullptr;
+//                }
+//
+//                ValueWrapper::ptr RHS = ctx->arguments()->expressionList()->expression(0)->accept(this);
+//                return RHS->castTo(*context->Builder, *Type2Cast);
+//            }
+
+
 
             std::vector<llvm::Value *> ArgsV;
             if (ctx->arguments()->expressionList()) {
@@ -956,10 +961,10 @@ public:
 
             context->Builder->CreateCall(context->Functions.find("main_GC_PUSHSTACK")->second.Function, {});
 
-            llvm::Value *value = context->Builder->CreateCall(func->second.Function, ArgsV);
+            llvm::Value *value = context->Builder->CreateCall((llvm::Function *)function->getValue(), ArgsV);
 
             std::vector<llvm::Value *> gcVals = {};
-            auto retType = func->second.type.getTypeDetails().functionInfo->retType;
+            auto retType = function->getType().getTypeDetails().functionInfo->retType;
 
             if (retType) {
                 if (retType->getTypeDetails().pointerInfo) {
@@ -969,15 +974,6 @@ public:
                 }
             }
 
-
-//            for (auto bl: context->stackController.Stack) {
-//                for (auto var: bl.second) {
-//                    if (!var.second->isConstant() || var.second->getType().getTypeDetails().pointerInfo) {
-//                        gcVals.push_back(var.second->getValue());
-//                        continue;
-//                    }
-//                }
-//            }
             gcVals.insert(gcVals.begin(),
                           llvm::ConstantInt::get(*context->TheContext, llvm::APInt(32, gcVals.size()))
             );
@@ -1017,7 +1013,12 @@ public:
 
         if (ctx->DOT()) {
             ValueWrapper::ptr left = ctx->primaryExpr()->accept(this);
-
+            if (left->getType().getTypeDetails().pointerInfo) {
+                left = left->toRHS(*context->Builder);
+                left = ValueWrapper::Create(
+                        false, *left->getType().getTypeDetails().pointerInfo->type, left->getValue()
+                        );
+            }
             auto structInfo = left->getType().getTypeDetails().structInfo;
             if (!structInfo) {
                 std::cerr << "Dot operation supports only for structs: " << ctx->getText() << std::endl;
@@ -1039,13 +1040,8 @@ public:
             if (!fieldType) {
                 std::cerr << "Can't find struct field " << fieldName << ": " << ctx->getText();
                 return nullptr;
-
             }
 
-
-//            context->TheModule->print(llvm::errs(), nullptr);
-//            left->getType().getType()->print(llvm::errs());
-//            left->getValue()->print(llvm::errs());
 
             if (left->isConstant()) {
                 auto valptr = context->Builder->CreateExtractElement(left->getValue(), fieldI, "");
@@ -1087,6 +1083,10 @@ public:
     antlrcpp::Any visitOperandName(GoParser::OperandNameContext *ctx) override {
         auto varName = ctx->IDENTIFIER()->getText();
 
+        auto func = context->Functions.find(context->GetFunctionID(varName));
+        if (func != context->Functions.end()) {
+            return func->second.getValue();
+        }
         auto value = context->stackController.GetNamedValue(varName);
 
         if (!value) {
@@ -1238,11 +1238,6 @@ public:
                 }
 
                 child = child->toRHS(*context->Builder);
-
-//                llvm::Value *value = context->Builder->CreateLoad(
-//                        child->getType().getTypeDetails().pointerInfo->type->getType(),
-//                        child->getValue()
-//                );
 
                 return ValueWrapper::Create(
                         false, *child->getType().getTypeDetails().pointerInfo->type, child->getValue());

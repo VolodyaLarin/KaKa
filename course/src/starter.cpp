@@ -33,7 +33,6 @@ std::map<void *, HeapEntry> *HEAP;
 std::vector<ShadowStackEntry> *SHADOW_STACK;
 
 void *ALLOCATE(size_t size, size_t number_of_links, ...) {
-
     va_list args;
     va_start(args, number_of_links);
 
@@ -42,13 +41,13 @@ void *ALLOCATE(size_t size, size_t number_of_links, ...) {
     HeapEntry he = {
             {}
     };
+    he.offsets.reserve(number_of_links);
 
     for (size_t i = 0; i < number_of_links; ++i) {
         he.offsets.push_back(va_arg(args, size_t));
     }
 
     HEAP->insert( {ptr, he});
-//    std::cout << std::endl << "Alocated " << ptr << " sized " << size << " and " << number_of_links << " links" << std::endl;
 
     SHADOW_STACK->rbegin()->pointers.push_back(ptr);
     return ptr;
@@ -59,29 +58,16 @@ void GC_PUSHSTACK() {
     SHADOW_STACK->push_back({});
 }
 void GC_POPSTACK() {
-//    {
-//        printf("\n");
-//        int i = 0;
-//        for (auto layer: *SHADOW_STACK) {
-//            i++;
-//            printf("%d==", i);
-//            for (auto ptr: layer.pointers) {
-//                printf("%p ", ptr);
-//            }
-//            printf("\n");
-//        }
-//    }
     SHADOW_STACK->pop_back();
 }
 
-bool markHeap(void *ptr, bool warning=true) {
+bool markHeap(void *ptr) {
     if (!ptr) {
         return true;
     }
 
     auto res = HEAP->find(ptr);
     if (res == HEAP->end()) {
-        if (!warning) return false;
         std::cerr << "Warning: includes pointer to non alocated memory " << ptr << std::endl;
         return false;
     }
@@ -89,12 +75,9 @@ bool markHeap(void *ptr, bool warning=true) {
     if (res->second.isUsed) {
         return true;
     }
-//    printf("Mark node %p, ", res->first);
-
     res->second.isUsed = true;
 
     for (auto offset: res->second.offsets) {
-//        printf("Going in node %p, ", res->first);
         void * ptrEntry = *(void **)((char *)ptr + offset);
         markHeap(ptrEntry);
     }
@@ -104,21 +87,16 @@ bool markHeap(void *ptr, bool warning=true) {
 void GC_CALL(size_t size, ...) {
     va_list args;
     va_start(args, size);
-//    std::cout << std::endl << "Heap: ";
     for (auto &he: *HEAP) {
         he.second.isUsed = false;
-//        std::cout << he.first << " ";
     }
 
-//    std::cout << std::endl << "GC_CALL : ";
     for (size_t i = 0; i < size; ++i) {
         void *ptr = va_arg(args, void *);
-//        std::cout << ptr << " ";
         markHeap(ptr);
     }
 
     GC_POPSTACK();
-
 
     {
         int i = 0;
@@ -133,22 +111,16 @@ void GC_CALL(size_t size, ...) {
 
 
     std::vector<void *> toRemove;
-//    std::cout << "Marked to remove: ";
     for (auto &he: *HEAP) {
         if (!he.second.isUsed) {
-//            std::cout << he.first << " ";
             toRemove.push_back(he.first);
         }
     }
-//    std::cout << std::endl;
-
 
     for (auto ptr: toRemove) {
         free(ptr);
         HEAP->erase(HEAP->find(ptr));
     }
-
-//    printf("\n");
 }
 
 
