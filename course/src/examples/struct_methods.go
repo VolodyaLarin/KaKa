@@ -3,31 +3,34 @@ package main
 import "fmt"
 
 type rect struct {
-    width, height int
+	width  int
+	height int
 }
 
 func (r *rect) area() int {
-    return r.width * r.height
+	return r.width * r.height
 }
 
 func (r rect) perim() int {
-    return 2*r.width + 2*r.height
+	return 2*r.width + 2*r.height
 }
 
 func (r rect) print() {
-    fmt.Printf("area: %d perim %d\n", r.area(), r.perim())
+	printf("W: %d H: %d\n", r.width, r.height)
+	printf("area: %d perim %d\n", r.area(), r.perim())
 }
 
 func main() int {
-    var r rect;
-    rect.width = 10
-    rect.height = 12
+	var r rect
+	r.width = 10
+	r.height = 12
 
-    r.print()
+	r.print()
 
-    var rp *rect = &r
+	var rp *rect = &r
+	rp.width = rp.width * 2
+	rp.print()
+	r.print()
 
-    (*rp).print()
-
-    return 0
+	return 0
 }

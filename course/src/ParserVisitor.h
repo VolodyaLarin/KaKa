@@ -74,6 +74,14 @@ class TypeWrapper {
     }
 
 public:
+    const std::string &getName() const {
+        return Name;
+    }
+
+    void setName(const std::string &name) {
+        Name = name;
+    }
+
     const bool isNumber() {
         return typeDetails.intInfo || typeDetails.floatInfo;
     }
@@ -167,10 +175,16 @@ public:
     }
 
     TypeWrapper getPointerTo() {
-        return TypeWrapper(
+        auto ty =  TypeWrapper(
                 Type->getPointerTo()
 
         );
+
+        ty.typeDetails.pointerInfo = {
+                std::make_shared<TypeWrapper>(*this)
+        };
+
+        return ty;
     }
 
     TypeWrapper getArrayOf(size_t count) {
@@ -264,20 +278,26 @@ public:
 
 
 class ValueWrapper {
+public:
+    typedef std::shared_ptr<ValueWrapper> ptr;
+private:
     bool IsConstant = false;
     TypeWrapper Type;
     llvm::Value *Value;
+    ValueWrapper::ptr Binding;
 
-    ValueWrapper(bool isConstant, TypeWrapper typeW, llvm::Value *value) : IsConstant(isConstant), Type(typeW),
-                                                                           Value(value) {}
+    ValueWrapper(bool isConstant, TypeWrapper typeW, llvm::Value *value, ValueWrapper::ptr binding) : IsConstant(isConstant), Type(typeW),
+                                                                           Value(value), Binding(binding) {}
 
 public:
-    typedef std::optional<ValueWrapper> optional;
-    typedef std::shared_ptr<ValueWrapper> ptr;
 
-    static ptr Create(bool isConstant, TypeWrapper typeW, llvm::Value *value) {
+    const ptr &getBinding() const {
+        return Binding;
+    }
+
+    static ptr Create(bool isConstant, TypeWrapper typeW, llvm::Value *value, ValueWrapper::ptr bind = nullptr) {
         return std::make_shared<ValueWrapper>(ValueWrapper(
-                isConstant, typeW, value
+                isConstant, typeW, value, bind
         ));
     }
 
@@ -378,6 +398,10 @@ public:
     ValueWrapper::ptr getValue() {
         return ValueWrapper::Create(true, type, Function);
     }
+
+    ValueWrapper::ptr bind(ValueWrapper::ptr binder) {
+        return ValueWrapper::Create(true, type, Function, binder);
+    }
 };
 
 class StackController {
@@ -436,6 +460,9 @@ public:
     std::map<std::string, FunctionWrapper> Functions;
     std::map<std::string, TypeWrapper> Types;
 
+    [[nodiscard]] std::string GetMethodId(const std::string &name, const std::string &struct_name) const {
+        return struct_name + "__struct__" + name;
+    }
     [[nodiscard]] std::string GetFunctionID(const std::string &name) const {
         return this->ModuleName + '_' + name;
     }
@@ -606,63 +633,86 @@ public:
                                       });
         }
 
-
     };
 
     antlrcpp::Any visitSourceFile(GoParser::SourceFileContext *ctx) override {
         this->context->ModuleName = ctx->packageClause()->IDENTIFIER()->getText();
 
-
         GenereateBuildins();
 
-        for (auto importDecl: ctx->importDecl()) {
-            // @todo: implement imports
+        for (auto & child: ctx->children) {
+            child->accept(this);
         }
 
-        for (auto decl: ctx->declaration()) {
-            if (!decl->typeDecl()) {
-                std::cerr << "This is not supported: " << decl->getText();
-                continue;
-            }
-
-            if (decl->typeDecl()->typeSpec(0)->aliasDecl()) {
-                std::cerr << "Aliases is not supported: " << decl->getText();
-                continue;
-            }
-            auto def = decl->typeDecl()->typeSpec(0)->typeDef();
-
-            auto defName = def->IDENTIFIER()->getText();
-            auto type = context->GetType(def->type_());
-
-            if (!type) {
-                std::cerr << "Can't declare type " << defName << std::endl;
-                continue;
-            }
-
-            context->Types.insert({
-                                          defName,
-                                          *type
-                                  });
-
-
-        }
-
-        for (auto funcDecl: ctx->functionDecl()) {
-            this->visitFunctionDecl(funcDecl);
-        }
-
-        return 0;
+        return nullptr;
     }
 
-    antlrcpp::Any visitFunctionDecl(GoParser::FunctionDeclContext *ctx) override {
+    antlrcpp::Any visitImportDecl(GoParser::ImportDeclContext *ctx) override {
+        std::cerr << "Warning: Import statement is not supported: " << ctx->getText() << std::endl;
+        return nullptr;
+    }
+
+    antlrcpp::Any visitTypeDecl(GoParser::TypeDeclContext *ctx) override {
+        if (ctx->typeSpec(0)->aliasDecl()) {
+            std::cerr << "Warning: Aliases is not supported: " << ctx->getText();
+            return nullptr;
+        }
+        auto def = ctx->typeSpec(0)->typeDef();
+
+        auto defName = def->IDENTIFIER()->getText();
+        auto type = context->GetType(def->type_());
+        if (!type) {
+            std::cerr << "Error: Can't declare type " << defName << std::endl;
+            return nullptr;
+        }
+        type->setName(defName);
+
+        context->Types.insert({
+                                      defName,
+                                      *type
+                              });
+
+        return nullptr;
+    }
+
+    std::optional<FunctionWrapper> makeFunction(antlr4::tree::ParseTree *ctx, GoParser::ReceiverContext *receiver,  antlr4::tree::TerminalNode *IDENTIFIER, GoParser::SignatureContext *signature, GoParser::BlockContext *block) {
         std::vector<TypeWrapper> args;
         std::optional<TypeWrapper> retT = {};
 
-        for (auto arg: ctx->signature()->parameters()->parameterDecl()) {
+        std::optional<TypeWrapper> recvTy = {};
+        bool recVPtr = false;
+
+
+        if (receiver) {
+            recvTy = context->GetType(receiver->parameters()->parameterDecl(0)->type_());
+            if (!recvTy) {
+                std::cerr << "Error: can't create method of undeclared struct: " << signature->getText() << std::endl;
+                return {};
+            }
+
+            if (recvTy->getTypeDetails().pointerInfo) {
+                if (!recvTy->getTypeDetails().pointerInfo->type) {
+                    std::cerr << "Error: can't create method of void *: " << signature->getText() << std::endl;
+                    return {};
+                }
+                recvTy = *recvTy->getTypeDetails().pointerInfo->type;
+                recVPtr = true;
+            }
+
+            if (!recvTy->getTypeDetails().structInfo) {
+                    std::cerr << "Error: can't create not a struct method: " << signature->getText() << std::endl;
+                    return {};
+            }
+
+            args.push_back(recvTy->getPointerTo());
+        }
+
+
+        for (auto arg: signature->parameters()->parameterDecl()) {
             auto type = context->GetType(arg->type_());
             if (!type) {
-                std::cerr << "Can't find type : " << ctx->getText() << std::endl;
-                return nullptr;
+                std::cerr << "Error: Can't find type : " << ctx->getText() << std::endl;
+                return {};
             }
             for (auto argN: arg->identifierList()->IDENTIFIER()) {
                 args.push_back(*type);
@@ -670,21 +720,25 @@ public:
         }
 
 
-        if (ctx->signature()->result()) {
-            auto goType = ctx->signature()->result()->type_();
+        if (signature->result()) {
+            auto goType = signature->result()->type_();
             if (!goType) {
-                std::cerr << "Not supported multiple return: " << ctx->signature()->getText() << std::endl;
-                return nullptr;
+                std::cerr << "Error: Not supported multiple return: " << signature->getText() << std::endl;
+                return {};
             }
             auto type = context->GetType(goType);
             if (!type) {
                 std::cerr << "Can't find type : " << ctx->getText() << std::endl;
-                return nullptr;
+                return {};
             }
             retT = *type;
         }
 
-        auto nameCode = ctx->IDENTIFIER()->getText();
+        auto nameCode = IDENTIFIER->getText();
+        if (recvTy) {
+            nameCode = context->GetMethodId(nameCode, recvTy->getName());
+        }
+
         auto name = context->GetFunctionID(nameCode);
 
         auto funcT = TypeWrapper::GetFunction(*context->TheContext, retT, args);
@@ -707,35 +761,59 @@ public:
 
         context->stackController.PushLevel(BB);
 
-        {
-            int i = 0;
-            for (auto arg: ctx->signature()->parameters()->parameterDecl()) {
-                auto ty = context->GetType(arg->type_());
-                for (auto argN: arg->identifierList()->IDENTIFIER()) {
-                    auto llvmArg = func->getArg(i);
-                    i++;
+        int i = 0;
+        if (recvTy) {
+            i++;
+            auto nameArg = receiver->parameters()->parameterDecl(0)->identifierList()->IDENTIFIER(0)->getText();
+            llvm::Value *argVal = func->getArg(0);
+            auto argTy = *recvTy;
 
-                    auto var = context->Builder->CreateAlloca(ty->getType());
+            if (recVPtr) {
+                auto var = context->Builder->CreateAlloca(recvTy->getType()->getPointerTo());
+                context->Builder->CreateStore(argVal, var);
+                argVal = var;
+                argTy = argTy.getPointerTo();
+            }
 
-                    context->Builder->CreateStore(llvmArg, var);
 
-                    context->stackController.AddNamedValue(
-                            argN->getText(),
-                            ValueWrapper::Create(
-                                    false,
-                                    *ty,
-                                    (llvm::Value *) var
-                            ));
-                }
+                context->stackController.AddNamedValue(
+                        nameArg,
+                        ValueWrapper::Create(
+                                false,
+                                argTy,
+                                argVal
+                        ));
+
+        }
+
+
+        for (auto arg: signature->parameters()->parameterDecl()) {
+            auto ty = context->GetType(arg->type_());
+            for (auto argN: arg->identifierList()->IDENTIFIER()) {
+                auto llvmArg = func->getArg(i);
+                i++;
+
+                auto var = context->Builder->CreateAlloca(ty->getType());
+
+                context->Builder->CreateStore(llvmArg, var);
+
+                context->stackController.AddNamedValue(
+                        argN->getText(),
+                        ValueWrapper::Create(
+                                false,
+                                *ty,
+                                (llvm::Value *) var
+                        ));
             }
         }
 
-        if (!ctx->block() || !ctx->block()->statementList()) {
-            std::cerr << "Can't create function " << nameCode << std::endl;
-            return nullptr;
+
+        if (!block || !block->statementList()) {
+            std::cerr << "Error: Can't create function " << nameCode << ". Not found function body."<< std::endl;
+            return {};
         }
 
-        for (auto statement: ctx->block()->statementList()->statement()) {
+        for (auto statement: block->statementList()->statement()) {
             statement->accept(this);
         }
 
@@ -746,7 +824,13 @@ public:
 
         llvm::verifyFunction(*func);
 
-        return 0;
+        return funcWrap;
+    }
+
+    antlrcpp::Any visitFunctionDecl(GoParser::FunctionDeclContext *ctx) override {
+        return makeFunction(
+                ctx, nullptr, ctx->IDENTIFIER(), ctx->signature(), ctx->block()
+                );
     }
 
 
@@ -950,6 +1034,11 @@ public:
 
 
             std::vector<llvm::Value *> ArgsV;
+
+            if (function->getBinding()) {
+                ArgsV.emplace_back(function->getBinding()->toRHS(*context->Builder)->getValue());
+            }
+
             if (ctx->arguments()->expressionList()) {
                 for (auto expr: ctx->arguments()->expressionList()->expression()) {
                     ValueWrapper::ptr value = expr->accept(this);
@@ -1026,6 +1115,12 @@ public:
             }
 
             auto fieldName = ctx->IDENTIFIER()->getText();
+
+            auto method = context->Functions.find(context->GetFunctionID(context->GetMethodId(fieldName, left->getType().getName())));
+            if (method != context->Functions.end()) {
+                return method->second.bind(left->getPointerTo());
+            }
+
             size_t fieldI = 0;
             std::optional<TypeWrapper> fieldType;
 
@@ -1066,6 +1161,12 @@ public:
         }
 
         return GoParserBaseVisitor::visitPrimaryExpr(ctx);
+    }
+
+    antlrcpp::Any visitMethodDecl(GoParser::MethodDeclContext *ctx) override {
+        return makeFunction(
+                ctx, ctx->receiver(), ctx->IDENTIFIER(), ctx->signature(), ctx->block()
+        );
     }
 
 
