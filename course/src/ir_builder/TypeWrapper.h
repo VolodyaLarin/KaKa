@@ -86,13 +86,14 @@ class TypeWrapper {
 
   static TypeWrapper GetFloat(llvm::LLVMContext &TheContext, bool isLong = true);
 
-  static TypeWrapper
-  GetStruct(llvm::LLVMContext &TheContext, std::vector<std::pair<std::string, TypeWrapper>> &fields,
-            bool isInterface = false);
+  static TypeWrapper GetStruct(llvm::LLVMContext &TheContext,
+                               std::vector<std::pair<std::string, TypeWrapper>> &fields,
+                               bool isInterface = false);
 
-  static TypeWrapper
-  GetFunction(llvm::LLVMContext &TheContext, std::optional<TypeWrapper> retType, std::vector<TypeWrapper> arguments,
-              bool isVarArg = false);
+  static TypeWrapper GetFunction(llvm::LLVMContext &TheContext,
+                                 std::optional<TypeWrapper> retType,
+                                 std::vector<TypeWrapper> arguments,
+                                 bool isVarArg = false);
 
   llvm::Type *getType() const;
 
@@ -100,7 +101,8 @@ class TypeWrapper {
 
   TypeWrapper getArrayOf(size_t count);
 
-  static std::optional<TypeWrapper> GetTypeByName(const std::string &typeName, llvm::LLVMContext &TheContext,
+  static std::optional<TypeWrapper> GetTypeByName(const std::string &typeName,
+                                                  llvm::LLVMContext &TheContext,
                                                   std::map<std::string, TypeWrapper> &typeStorage);
 
   std::optional<TypeWrapper> getHigherType(llvm::LLVMContext &context, TypeWrapper right);

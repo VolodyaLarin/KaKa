@@ -30,19 +30,19 @@
 #include "llvm/ADT/APFloat.h"
 
 class FunctionWrapper {
-public:
+ public:
 
-    std::string ModuleId = "";
-    std::string Name = "";
+  std::string ModuleId = "";
+  std::string Name = "";
 
-    TypeWrapper type;
-    llvm::Function *Function;
+  TypeWrapper type;
+  llvm::Function *Function;
 
-    FunctionWrapper(const std::string &moduleId, const std::string &name, TypeWrapper type, llvm::Function *function);
+  FunctionWrapper(const std::string &moduleId, const std::string &name, TypeWrapper type, llvm::Function *function);
 
-    ValueWrapper::ptr getValue();
+  ValueWrapper::ptr getValue();
 
-    ValueWrapper::ptr bind(ValueWrapper::ptr binder);
+  ValueWrapper::ptr bind(ValueWrapper::ptr binder);
 };
 
 #endif //APP_FUNCTIONWRAPPER_H

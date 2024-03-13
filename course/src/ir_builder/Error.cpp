@@ -11,7 +11,7 @@ std::string Error::toString() {
   if (node) {
     str += ":" + node->getText();
   }
-  return "\n=======\n"  + str + "\n=======\n" ;
+  return "\n=======\n" + str + "\n=======\n";
 }
 
 Error::ptr Error::Create(const std::string &description, antlr4::tree::ParseTree *node) {

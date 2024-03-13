@@ -194,7 +194,7 @@ antlrcpp::Any ParserVisitor::visitPrimaryExpr(GoParser::PrimaryExprContext *ctx)
 
     if (ctx->arguments()->expressionList()) {
       auto exprs = ctx->arguments()->expressionList()->expression();
-      std::transform(exprs.begin(), exprs.end(), std::back_inserter(ArgsV), [this](auto expr)-> EValue {
+      std::transform(exprs.begin(), exprs.end(), std::back_inserter(ArgsV), [this](auto expr) -> EValue {
         return expr->accept(this);
       });
     }
@@ -293,7 +293,6 @@ antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
       if (!value)
         return EValue(Error::Create("Can't get address", ctx));
 
-
       return EValue(value);
     }
     if (ctx->STAR()) {
@@ -324,7 +323,7 @@ antlrcpp::Any ParserVisitor::visitIfStmt(GoParser::IfStmtContext *ctx) {
   std::function<void()> elseBlock = nullptr;
 
   if (ctx->ELSE()) {
-    elseBlock = [this, ctx](){
+    elseBlock = [this, ctx]() {
       if (ctx->ifStmt()) {
         ctx->ifStmt()->accept(this);
       } else {
@@ -337,20 +336,19 @@ antlrcpp::Any ParserVisitor::visitIfStmt(GoParser::IfStmtContext *ctx) {
 }
 
 antlrcpp::Any ParserVisitor::visitForStmt(GoParser::ForStmtContext *ctx) {
-  auto Init = [this, ctx] () {
+  auto Init = [this, ctx]() {
     ctx->forClause()->children[0]->accept(this);
   };
-  auto Cond = [this, ctx] () -> EValue {
+  auto Cond = [this, ctx]() -> EValue {
     return ctx->forClause()->children[2]->accept(this);
   };
-  auto After = [this, ctx] () {
+  auto After = [this, ctx]() {
     ctx->forClause()->children[4]->accept(this);
   };
 
-  auto Block = [this, ctx] ()  {
+  auto Block = [this, ctx]() {
     ctx->block()->statementList()->accept(this);
   };
-
 
   return goIrBuilder->createFor(Init, Cond, After, Block);
 }

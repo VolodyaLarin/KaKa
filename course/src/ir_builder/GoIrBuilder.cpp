@@ -390,8 +390,7 @@ EValue GoIrBuilder::createCall(EValue function, std::vector<EValue> ArgsV) {
     size_t argsCount = ArgsV.size();
     if (function->getBinding()) argsCount++;
 
-    if (!funcinfo.isVarargs &&  typesCount != argsCount
-        || funcinfo.isVarargs && argsCount < typesCount) {
+    if (!funcinfo.isVarargs && typesCount != argsCount || funcinfo.isVarargs && argsCount < typesCount) {
       return Error::Create("Incorrect arguments value");
     }
   }
@@ -459,8 +458,7 @@ EValue GoIrBuilder::_getByIndex(EValue &left, EValue indexV, const TypeWrapper &
     return ValueWrapper::Create(true, type, val);
   }
 
-  std::vector<llvm::Value *> indexes =
-      {createIntConstant(0)->getValue(), indexV->getValue()};
+  std::vector<llvm::Value *> indexes = {createIntConstant(0)->getValue(), indexV->getValue()};
 
   auto valptr = context.Builder->CreateGEP(left->getType().getType(), left->getValue(), indexes);
 
@@ -506,7 +504,8 @@ EValue GoIrBuilder::getStructField(EValue left, std::string fieldName) {
 EValue GoIrBuilder::deref(EValue value) {
   if (!value) return value;
   if (!value->getType().getTypeDetails().pointerInfo) return Error::Create("Can dereference only a pointer");
-  if (!value->getType().getTypeDetails().pointerInfo->type) return Error::Create("Can dereference only a non-void pointer");
+  if (!value->getType().getTypeDetails().pointerInfo->type)
+    return Error::Create("Can dereference only a non-void pointer");
 
   auto res = toRHS(value);
   return ValueWrapper::Create(false, *res->getType().getTypeDetails().pointerInfo->type, res->getValue());
@@ -702,7 +701,7 @@ EValue GoIrBuilder::createIf(EValue condition, std::function<void()> ifBuilder, 
   return {};
 }
 EValue GoIrBuilder::createFor(std::function<void()> Init,
-                              std::function<EValue ()> Cond,
+                              std::function<EValue()> Cond,
                               std::function<void()> After,
                               std::function<void()> Block) {
   llvm::Function *TheFunction = context.Builder->GetInsertBlock()->getParent();
