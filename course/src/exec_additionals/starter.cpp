@@ -1,7 +1,3 @@
-
-#include <stdio.h>
-#include <time.h>
-#include <stdlib.h>
 #include <stdarg.h>
 
 #include <map>
@@ -37,6 +33,7 @@ void *ALLOCATE(size_t size, size_t number_of_links, ...) {
     va_start(args, number_of_links);
 
     void *ptr = calloc(size, 1);
+//    return  ptr;
 
     HeapEntry he = {
             {}
@@ -55,9 +52,11 @@ void *ALLOCATE(size_t size, size_t number_of_links, ...) {
 
 
 void GC_PUSHSTACK() {
+//  return;
     SHADOW_STACK->push_back({});
 }
 void GC_POPSTACK() {
+//  return;
     SHADOW_STACK->pop_back();
 }
 
@@ -87,6 +86,7 @@ bool markHeap(void *ptr) {
 void GC_CALL(size_t size, ...) {
     va_list args;
     va_start(args, size);
+//    return;
     for (auto &he: *HEAP) {
         he.second.isUsed = false;
     }

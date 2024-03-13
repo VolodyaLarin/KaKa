@@ -4,7 +4,7 @@ func main() {
 	const size int = 5
 	var a [5]int
 
-  	printf("Введите элементы массива (%d штук): ", size)
+	printf("Введите элементы массива (%d штук): ", size)
 
 	for i := 0; i < size; i = i + 1 {
 		scanf("%d", &a[i])

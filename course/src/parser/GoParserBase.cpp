@@ -1,5 +1,5 @@
 #include "GoParserBase.h"
-#include "GoParser.h"
+#include "codegen/GoParser.h"
 
 bool GoParserBase::closingBracket()
 {

@@ -1,11 +1,11 @@
 #include <iostream>
 
 #include "antlr4-runtime/antlr4-runtime.h"
-#include "parser/GoLexer.h"
-#include "parser/GoParser.h"
-#include "parser/GoParserBaseVisitor.h"
+#include "parser/codegen/GoLexer.h"
+#include "parser/codegen/GoParser.h"
+#include "parser/codegen/GoParserBaseVisitor.h"
 
-#include "ParserVisitor.h"
+#include "ir_builder/ParserVisitor.h"
 
 
 void print_tree(antlr4::tree::ParseTree *tree) {
@@ -35,14 +35,14 @@ int main(int argc, const char *argv[]) {
 
 
         ParserVisitor visitor;
-        visitor.visitSourceFile(tree);
+        tree->accept(&visitor);
 
         std::string newfilename = argv[i];
         newfilename += ".ll";
 
         std::error_code err;
         auto os = llvm::raw_fd_ostream(newfilename, err);
-        visitor.context->TheModule->print(os, nullptr);
+        visitor.GetGoIrBuilder()->GetContext().TheModule->print(os, nullptr);
 
         if (err) {
             return err.value();
