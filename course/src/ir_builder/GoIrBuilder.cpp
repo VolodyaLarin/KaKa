@@ -75,6 +75,10 @@ void GoIrBuilder::generateBuiltIns() {
     func.Function = f;
     context.Functions.insert({fId, func});
   }
+
+  context.stackController.PushLevel(nullptr);
+  context.stackController.AddNamedValue("true", _createIntConstant(1, false, 1).GetValuePtr());
+  context.stackController.AddNamedValue("false", _createIntConstant(0, false, 1).GetValuePtr());
 }
 
 EValue GoIrBuilder::assignToInterface(ValueWrapper::ptr interface, const ValueWrapper::ptr &value) {
@@ -266,11 +270,14 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
   }
   return {funcWrap.getValue(), {}};
 }
-EValue GoIrBuilder::createIntConstant(int value) {
-  TypeWrapper type = TypeWrapper::GetInt(*context.TheContext, true, 32);
-  llvm::Value *retv = llvm::ConstantInt::get(*context.TheContext, llvm::APInt(32, value));
+EValue GoIrBuilder::_createIntConstant(int value, bool isSigned, size_t size) {
+  TypeWrapper type = TypeWrapper::GetInt(*context.TheContext, isSigned, size);
+  llvm::Value *retv = llvm::ConstantInt::get(*context.TheContext, llvm::APInt(size, value, isSigned));
 
   return {ValueWrapper::Create(true, type, retv), {}};
+}
+EValue GoIrBuilder::createIntConstant(int value) {
+  return _createIntConstant(value, true, 32);
 }
 EValue GoIrBuilder::createFloatConstant(double num) {
   auto ty = TypeWrapper::GetFloat(*context.TheContext);
@@ -516,7 +523,10 @@ EValue GoIrBuilder::getNamed(const std::string &name) {
   if (func != context.Functions.end()) {
     return func->second.getValue();
   }
-  return context.stackController.GetNamedValue(name);
+  auto res = context.stackController.GetNamedValue(name);
+  if (!res) return Error::Create("Can't find id: " + name);
+
+  return res;
 }
 EValue GoIrBuilder::createBinOperation(GoIrBuilder::BinaryOperation op, EValue left, EValue right) {
   auto L = toRHS(left);
@@ -668,37 +678,7 @@ EValue GoIrBuilder::createBinOperation(GoIrBuilder::BinaryOperation op, EValue l
   return ValueWrapper::Create(true, retType, res);
 }
 EValue GoIrBuilder::createIf(EValue condition, std::function<void()> ifBuilder, std::function<void()> elseBuilder) {
-  condition = toRHS(condition);
-  auto parent = context.stackController.GetBlock()->getParent();
-
-  auto ThenBB = llvm::BasicBlock::Create(*context.TheContext, "if", parent);
-  auto ElseBB = llvm::BasicBlock::Create(*context.TheContext, "else");
-  auto MergeBB = llvm::BasicBlock::Create(*context.TheContext, "after-if");
-
-  context.Builder->CreateCondBr(condition->getValue(), ThenBB, ElseBB);
-  context.Builder->SetInsertPoint(ThenBB);
-
-  context.stackController.PushLevel(context.stackController.GetBlock());
-
-  ifBuilder();
-
-  context.Builder->CreateBr(MergeBB);
-
-  parent->insert(parent->end(), ElseBB);
-  context.Builder->SetInsertPoint(ElseBB);
-
-  context.stackController.PopLevel();
-
-  if (elseBuilder) {
-    context.stackController.PushLevel(context.stackController.GetBlock());
-    elseBuilder();
-    context.stackController.PopLevel();
-  }
-  context.Builder->CreateBr(MergeBB);
-
-  parent->insert(parent->end(), MergeBB);
-  context.Builder->SetInsertPoint(MergeBB);
-
+  _createIf(std::move(condition), std::move(ifBuilder), std::move(elseBuilder));
   return {};
 }
 EValue GoIrBuilder::createFor(std::function<void()> Init,
@@ -738,6 +718,75 @@ EValue GoIrBuilder::createFor(std::function<void()> Init,
 }
 const Context &GoIrBuilder::GetContext() const {
   return context;
+}
+
+EValue GoIrBuilder::_createAndOr(bool isAnd, EValue left, std::function<EValue()> rightBuilder) {
+  auto boolType = TypeWrapper::GetInt(*context.TheContext, false, 1);
+
+  left = toRHS(left);
+  EValue right;
+  auto rtRet = [rightBuilder, &right, this] {
+    right = toRHS(rightBuilder());
+  };
+  auto nop = []{};
+
+  auto ifctx = isAnd ? _createIf(left, rtRet) : _createIf(left, nop, rtRet);
+  if (!right) return right;
+
+  auto PN = context.Builder->CreatePHI(boolType.getType(), 2);
+  if (isAnd) {
+    PN->addIncoming(right->getValue(), ifctx._if);
+    PN->addIncoming(_createIntConstant(0, false,1)->getValue(), ifctx._else);
+  } else {
+    PN->addIncoming(_createIntConstant(1, false,1)->getValue(), ifctx._if);
+    PN->addIncoming(right->getValue(), ifctx._else);
+  }
+  return ValueWrapper::Create(true, boolType, PN);
+}
+
+EValue GoIrBuilder::createAnd(EValue left, std::function<EValue()> rightBuilder) {
+  return _createAndOr(true, std::move(left), std::move(rightBuilder));
+}
+
+EValue GoIrBuilder::createOr(EValue left, std::function<EValue()> rightBuilder) {
+  return _createAndOr(false, std::move(left), std::move(rightBuilder));
+}
+
+GoIrBuilder::IFContext GoIrBuilder::_createIf(EValue condition,
+                                              std::function<void()> ifBuilder,
+                                              std::function<void()> elseBuilder) {
+  condition = toRHS(condition);
+  auto parent = context.stackController.GetBlock()->getParent();
+
+  auto ThenBB = llvm::BasicBlock::Create(*context.TheContext, "if", parent);
+  auto ElseBB = llvm::BasicBlock::Create(*context.TheContext, "else");
+  auto MergeBB = llvm::BasicBlock::Create(*context.TheContext, "after-if");
+
+  context.Builder->CreateCondBr(condition->getValue(), ThenBB, ElseBB);
+  context.Builder->SetInsertPoint(ThenBB);
+
+  context.stackController.PushLevel(context.stackController.GetBlock());
+
+  ifBuilder();
+
+  context.Builder->CreateBr(MergeBB);
+
+  parent->insert(parent->end(), ElseBB);
+  context.Builder->SetInsertPoint(ElseBB);
+
+  context.stackController.PopLevel();
+
+  if (elseBuilder) {
+    context.stackController.PushLevel(context.stackController.GetBlock());
+    elseBuilder();
+    context.stackController.PopLevel();
+  }
+  context.Builder->CreateBr(MergeBB);
+
+  parent->insert(parent->end(), MergeBB);
+  context.Builder->SetInsertPoint(MergeBB);
+
+  return {ThenBB, ElseBB, MergeBB};
 }
 
 

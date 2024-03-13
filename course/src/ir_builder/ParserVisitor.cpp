@@ -237,7 +237,6 @@ antlrcpp::Any ParserVisitor::visitOperand(GoParser::OperandContext *ctx) {
 
 antlrcpp::Any ParserVisitor::visitOperandName(GoParser::OperandNameContext *ctx) {
   auto varName = ctx->IDENTIFIER()->getText();
-
   return goIrBuilder->getNamed(varName);
 }
 
@@ -301,6 +300,14 @@ antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
 
       return goIrBuilder->deref(child);
     }
+  } else if (ctx->LOGICAL_AND() || ctx->LOGICAL_OR()) {
+    EValue left = ctx->expression(0)->accept(this);
+    auto rightBuilder = [this, ctx] () -> EValue {
+      return ctx->expression(1)->accept(this);
+    };
+
+    if (ctx->LOGICAL_AND()) return goIrBuilder->createAnd(left, rightBuilder);
+    return goIrBuilder->createOr(left, rightBuilder);
   }
 
   return GoParserBaseVisitor::visitExpression(ctx);

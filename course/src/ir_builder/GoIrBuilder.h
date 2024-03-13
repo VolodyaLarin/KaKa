@@ -51,12 +51,23 @@ class GoIrBuilder {
                    std::function<EValue()> Cond,
                    std::function<void()> After,
                    std::function<void()> Block);
+  EValue createAnd(EValue left, std::function<EValue ()> rightBuilder);
+  EValue createOr(EValue left, std::function<EValue ()> rightBuilder);
  private:
   Context context;
 
   EValue assignToInterface(ValueWrapper::ptr interface, const ValueWrapper::ptr &value);
   EValue _getByIndex(EValue &left, EValue indexV, const TypeWrapper &type);
 
+  struct IFContext {
+    llvm::BasicBlock *_if;
+    llvm::BasicBlock *_else;
+    llvm::BasicBlock *_merge;
+  };
+
+  IFContext _createIf(EValue condition, std::function<void()> ifBuilder, std::function<void()> elseBuilder = nullptr);
+  EValue _createAndOr(bool isAnd, EValue left, std::function<EValue()> rightBuilder);
+  EValue _createIntConstant(int value, bool isSigned, size_t size);
 };
 
 #endif //APP_GOIRBUILDER_H
