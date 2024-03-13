@@ -5,6 +5,7 @@
 #include "GoIrBuilder.h"
 
 #include <utility>
+#include <llvm/IR/Verifier.h>
 
 void GoIrBuilder::generateBuiltIns() {
   std::vector<FunctionWrapper> functions = {FunctionWrapper("",

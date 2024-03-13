@@ -3,6 +3,7 @@
 //
 
 #include <algorithm>
+#include <boost/algorithm/string/replace.hpp>
 #include "ParserVisitor.h"
 
 antlrcpp::Any ParserVisitor::visitSourceFile(GoParser::SourceFileContext *ctx) {

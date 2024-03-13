@@ -9,6 +9,7 @@
 
 #include "Context.h"
 #include "Error.h"
+#include "codegen/GoParserVisitor.h"
 
 class GoIrBuilder {
  public:
