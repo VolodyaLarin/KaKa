@@ -33,7 +33,9 @@ class ParserVisitor : public GoParserBaseVisitor {
   antlrcpp::Any visitShortVarDecl(GoParser::ShortVarDeclContext *ctx) override;
   antlrcpp::Any visitIfStmt(GoParser::IfStmtContext *ctx) override;
   antlrcpp::Any visitForStmt(GoParser::ForStmtContext *ctx) override;
-
+  antlrcpp::Any visitIncDecStmt(GoParser::IncDecStmtContext *ctx) override;
+  antlrcpp::Any visitBreakStmt(GoParser::BreakStmtContext *ctx) override;
+  antlrcpp::Any visitContinueStmt(GoParser::ContinueStmtContext *ctx) override;
  private:
   std::shared_ptr<GoIrBuilder> goIrBuilder;
 

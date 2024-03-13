@@ -13,11 +13,20 @@
 #include "codegen/GoParser.h"
 
 class StackController {
+ private:
+  struct StackBlockDetails {
+    llvm::BasicBlock *thisBlock;
+    llvm::BasicBlock *breakToBlock = nullptr;
+    llvm::BasicBlock *continueBlockTo = nullptr;
+    std::map<std::string, ValueWrapper::ptr> values = {};
+  };
  public:
 
-  std::vector<std::pair<llvm::BasicBlock *, std::map<std::string, ValueWrapper::ptr>>> Stack = {};
+  std::vector<StackBlockDetails> Stack = {};
 
-  void PushLevel(llvm::BasicBlock *block);
+  void PushLevel(llvm::BasicBlock *block,
+                 llvm::BasicBlock *breakBlockTo = nullptr,
+                 llvm::BasicBlock *continueBlockTo = nullptr);
 
   void PopLevel();
 
@@ -26,6 +35,8 @@ class StackController {
   ValueWrapper::ptr GetNamedValue(const std::string name, std::string module = std::string());
 
   llvm::BasicBlock *GetBlock();
+  llvm::BasicBlock *GetBreakToBlock();
+  llvm::BasicBlock *GetContinueToBlock();
 };
 
 class Context {

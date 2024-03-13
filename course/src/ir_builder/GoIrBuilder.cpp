@@ -262,6 +262,23 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
 
   if (!retT) context.Builder->CreateRetVoid();
   {
+    for (auto &block : *func) {
+      bool hasTerminator = false;
+      std::vector<llvm::Instruction *> toRemove;
+      for (auto &instr : block) {
+        if (hasTerminator) {
+          toRemove.push_back(&instr);
+        }
+        if (instr.isTerminator()) {
+          hasTerminator = true;
+        }
+      }
+      for (auto r : toRemove) {
+        r->removeFromParent();
+      }
+    }
+  }
+  {
     std::string err_string;
     llvm::raw_string_ostream st(err_string);
     if (llvm::verifyFunction(*func, &st)) {
@@ -531,6 +548,8 @@ EValue GoIrBuilder::getNamed(const std::string &name) {
 EValue GoIrBuilder::createBinOperation(GoIrBuilder::BinaryOperation op, EValue left, EValue right) {
   auto L = toRHS(left);
   auto R = toRHS(right);
+  if (!L) return L;
+  if (!R) return L;
 
   auto ComputedType = L->getType().getHigherType(*context.TheContext, R->getType());
   if (!ComputedType) return Error::Create("Can't compute type of result operation (may be it's not a numbers...): ");
@@ -687,24 +706,27 @@ EValue GoIrBuilder::createFor(std::function<void()> Init,
                               std::function<void()> Block) {
   llvm::Function *TheFunction = context.Builder->GetInsertBlock()->getParent();
 
-  context.stackController.PushLevel(context.stackController.GetBlock());
+  auto BeforeBB = context.Builder->GetInsertBlock();
+  auto LoopBB = llvm::BasicBlock::Create(*context.TheContext, "loop_entry", TheFunction);
+  auto LoopInc = llvm::BasicBlock::Create(*context.TheContext, "loop_inc", TheFunction);
+  auto AfterBB = llvm::BasicBlock::Create(*context.TheContext, "loop_after", TheFunction);
+
+  context.Builder->SetInsertPoint(BeforeBB);
+  context.stackController.PushLevel(LoopBB, AfterBB, LoopInc);
 
   Init();
 
   auto StartCond = Cond();
   StartCond = toRHS(StartCond);
 
-  auto LoopBB = llvm::BasicBlock::Create(*context.TheContext, "loop", TheFunction);
-  auto AfterBB = llvm::BasicBlock::Create(*context.TheContext, "afterloop", TheFunction);
-
   context.Builder->CreateCondBr(StartCond->getValue(), LoopBB, AfterBB);
 
   context.Builder->SetInsertPoint(LoopBB);
 
   Block();
-
+  context.Builder->CreateBr(LoopInc);
+  context.Builder->SetInsertPoint(LoopInc);
   After();
-
   auto EndCond = Cond();
   EndCond = toRHS(EndCond);
 
@@ -728,7 +750,7 @@ EValue GoIrBuilder::_createAndOr(bool isAnd, EValue left, std::function<EValue()
   auto rtRet = [rightBuilder, &right, this] {
     right = toRHS(rightBuilder());
   };
-  auto nop = []{};
+  auto nop = [] {};
 
   auto ifctx = isAnd ? _createIf(left, rtRet) : _createIf(left, nop, rtRet);
   if (!right) return right;
@@ -736,9 +758,9 @@ EValue GoIrBuilder::_createAndOr(bool isAnd, EValue left, std::function<EValue()
   auto PN = context.Builder->CreatePHI(boolType.getType(), 2);
   if (isAnd) {
     PN->addIncoming(right->getValue(), ifctx._if);
-    PN->addIncoming(_createIntConstant(0, false,1)->getValue(), ifctx._else);
+    PN->addIncoming(_createIntConstant(0, false, 1)->getValue(), ifctx._else);
   } else {
-    PN->addIncoming(_createIntConstant(1, false,1)->getValue(), ifctx._if);
+    PN->addIncoming(_createIntConstant(1, false, 1)->getValue(), ifctx._if);
     PN->addIncoming(right->getValue(), ifctx._else);
   }
   return ValueWrapper::Create(true, boolType, PN);
@@ -787,6 +809,24 @@ GoIrBuilder::IFContext GoIrBuilder::_createIf(EValue condition,
   context.Builder->SetInsertPoint(MergeBB);
 
   return {ThenBB, ElseBB, MergeBB};
+}
+EValue GoIrBuilder::createBoolConstant(bool value) {
+  return _createIntConstant(value ? 1 : 0, false, 1);
+}
+EValue GoIrBuilder::createBreak() {
+  auto brPos = context.stackController.GetBreakToBlock();
+  if (!brPos) return Error::Create("Can't break");
+
+  context.Builder->CreateBr(brPos);
+
+  return {};
+}
+
+EValue GoIrBuilder::createContinue() {
+  auto brPos = context.stackController.GetContinueToBlock();
+  if (!brPos) return Error::Create("Can't continue");
+  context.Builder->CreateBr(brPos);
+  return {};
 }
 
 

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <boost/algorithm/string/replace.hpp>
+#include <support/Any.h>
 #include "ParserVisitor.h"
 
 antlrcpp::Any ParserVisitor::visitSourceFile(GoParser::SourceFileContext *ctx) {
@@ -255,7 +256,17 @@ antlrcpp::Any ParserVisitor::visitAssignment(GoParser::AssignmentContext *ctx) {
 
   return EValue();
 }
+antlrcpp::Any ParserVisitor::visitIncDecStmt(GoParser::IncDecStmtContext *ctx) {
+  EValue expr = ctx->expression()->accept(this);
+  EValue oneConst = goIrBuilder->createIntConstant(1);
+  auto binOp = GoIrBuilder::BinaryOperation::Add;
+  if (ctx->MINUS_MINUS()) {
+    binOp = GoIrBuilder::BinaryOperation::Sub;
+  }
+  auto res = goIrBuilder->createBinOperation(binOp, expr, oneConst);
 
+  return goIrBuilder->assign(expr, res);
+}
 antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
   if (ctx->add_op || ctx->rel_op || ctx->mul_op) {
     EValue L = ctx->expression(0)->accept(this);
@@ -366,15 +377,58 @@ antlrcpp::Any ParserVisitor::visitIfStmt(GoParser::IfStmtContext *ctx) {
 }
 
 antlrcpp::Any ParserVisitor::visitForStmt(GoParser::ForStmtContext *ctx) {
-  auto Init = [this, ctx]() {
-    ctx->forClause()->children[0]->accept(this);
-  };
-  auto Cond = [this, ctx]() -> EValue {
-    return ctx->forClause()->children[2]->accept(this);
-  };
-  auto After = [this, ctx]() {
-    ctx->forClause()->children[4]->accept(this);
-  };
+  auto trueConstant = goIrBuilder->createBoolConstant(true);
+
+  std::function<void()> Init = []() {};
+  std::function<EValue()> Cond = [trueConstant]() { return trueConstant; };
+  std::function<void()> After = []() {};
+
+  if (ctx->forClause()) {
+    Init = [this, ctx]() {
+      ctx->forClause()->children[0]->accept(this);
+    };
+    Cond = [this, ctx]() -> EValue {
+      return ctx->forClause()->children[2]->accept(this);
+    };
+    After = [this, ctx]() {
+      ctx->forClause()->children[4]->accept(this);
+    };
+  } else if (ctx->rangeClause()) {
+    auto range = ctx->rangeClause();
+    EValue rExpr = range->expression()->accept(this);
+    if (!rExpr) return rExpr;
+
+    if (!rExpr->getType().getTypeDetails().intInfo) {
+      return EValue(Error::Create("Supports only range(int)"));
+    }
+    auto lexpr = std::make_shared<EValue>();
+
+    Init = [this, range, lexpr]() {
+      EValue initVal = goIrBuilder->createIntConstant(0);
+      if (range->identifierList()) {
+        *lexpr = goIrBuilder->allocateMemory(initVal->getType());
+        auto name = range->identifierList()->IDENTIFIER(0)->getText();
+        goIrBuilder->addNamedValue(name, *lexpr);
+      } else {
+        *lexpr = range->expressionList()->expression(0)->accept(this);
+      }
+      goIrBuilder->assign(*lexpr, initVal);
+    };
+    Cond = [this, lexpr, rExpr]() -> EValue {
+      return goIrBuilder->createBinOperation(GoIrBuilder::Lt, *lexpr, rExpr);
+    };
+    After = [this, lexpr]() {
+      auto oneConst = goIrBuilder->createIntConstant(1);
+      auto sumRes = goIrBuilder->createBinOperation(GoIrBuilder::Add, *lexpr, oneConst);
+      goIrBuilder->assign(*lexpr, sumRes);
+    };
+  } else if (ctx->expression()) {
+    Cond = [this, ctx]() -> EValue {
+      return ctx->expression()->accept(this);
+    };
+  } else if (ctx->children.size() != 2) {
+    return EValue(Error::Create("Unsupported for type", ctx));
+  }
 
   auto Block = [this, ctx]() {
     ctx->block()->statementList()->accept(this);
@@ -384,4 +438,10 @@ antlrcpp::Any ParserVisitor::visitForStmt(GoParser::ForStmtContext *ctx) {
 }
 const std::shared_ptr<GoIrBuilder> &ParserVisitor::GetGoIrBuilder() const {
   return goIrBuilder;
+}
+antlrcpp::Any ParserVisitor::visitBreakStmt(GoParser::BreakStmtContext *ctx) {
+  return goIrBuilder->createBreak();
+}
+antlrcpp::Any ParserVisitor::visitContinueStmt(GoParser::ContinueStmtContext *ctx) {
+  return goIrBuilder->createContinue();
 }

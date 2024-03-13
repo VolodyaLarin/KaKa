@@ -4,8 +4,14 @@
 
 #include "Context.h"
 
-void StackController::PushLevel(llvm::BasicBlock *block) {
-  Stack.emplace_back(block, std::map<std::string, ValueWrapper::ptr>{});
+void StackController::PushLevel(llvm::BasicBlock *block,
+                                llvm::BasicBlock *breakBlockTo,
+                                llvm::BasicBlock *continueBlockTo) {
+  Stack.emplace_back(StackBlockDetails{
+      block,
+      breakBlockTo ? breakBlockTo : GetBreakToBlock(),
+      continueBlockTo ? continueBlockTo : GetContinueToBlock(),
+  });
 }
 
 void StackController::PopLevel() {
@@ -15,20 +21,20 @@ void StackController::PopLevel() {
 }
 
 bool StackController::AddNamedValue(const std::string &name, ValueWrapper::ptr value) {
-  auto ValueInStack = Stack.rbegin()->second.find(name);
-  if (ValueInStack != Stack.rbegin()->second.end()) {
+  auto ValueInStack = Stack.rbegin()->values.find(name);
+  if (ValueInStack != Stack.rbegin()->values.end()) {
     std::cerr << "Variable " << name << " allready defined" << std::endl;
     return false;
   }
 
-  Stack.rbegin()->second.insert({name, value});
+  Stack.rbegin()->values.insert({name, value});
   return true;
 }
 
 ValueWrapper::ptr StackController::GetNamedValue(const std::string name, std::string module) {
   for (auto block = Stack.rbegin(); block != Stack.rend(); block++) {
-    if (block->second.find(name) != block->second.end()) {
-      return block->second.find(name)->second;
+    if (block->values.find(name) != block->values.end()) {
+      return block->values.find(name)->second;
     }
   }
   return nullptr;
@@ -37,7 +43,17 @@ ValueWrapper::ptr StackController::GetNamedValue(const std::string name, std::st
 llvm::BasicBlock *StackController::GetBlock() {
   if (Stack.empty()) return nullptr;
 
-  return Stack.rbegin()->first;
+  return Stack.rbegin()->thisBlock;
+}
+llvm::BasicBlock *StackController::GetBreakToBlock() {
+  if (Stack.empty()) return nullptr;
+
+  return Stack.rbegin()->breakToBlock;
+}
+llvm::BasicBlock *StackController::GetContinueToBlock() {
+  if (Stack.empty()) return nullptr;
+
+  return Stack.rbegin()->continueBlockTo;
 }
 
 std::string Context::GetMethodId(const std::string &name, const std::string &struct_name) const {

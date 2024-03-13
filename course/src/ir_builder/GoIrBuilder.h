@@ -29,6 +29,7 @@ class GoIrBuilder {
                         GoParser::BlockContext *block = nullptr,
                         GoParserVisitor *visitor = nullptr);
   EValue createIntConstant(int value);
+  EValue createBoolConstant(bool value);
   EValue createFloatConstant(double num);
   EValue createNil();
   EValue createStringConstant(const std::string &data);
@@ -51,8 +52,10 @@ class GoIrBuilder {
                    std::function<EValue()> Cond,
                    std::function<void()> After,
                    std::function<void()> Block);
-  EValue createAnd(EValue left, std::function<EValue ()> rightBuilder);
-  EValue createOr(EValue left, std::function<EValue ()> rightBuilder);
+  EValue createAnd(EValue left, std::function<EValue()> rightBuilder);
+  EValue createOr(EValue left, std::function<EValue()> rightBuilder);
+  EValue createBreak();
+  EValue createContinue();
  private:
   Context context;
 
