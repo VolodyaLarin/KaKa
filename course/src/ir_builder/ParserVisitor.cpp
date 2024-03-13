@@ -124,51 +124,51 @@ antlrcpp::Any ParserVisitor::visitReturnStmt(GoParser::ReturnStmtContext *ctx) {
 }
 
 antlrcpp::Any ParserVisitor::visitVarDecl(GoParser::VarDeclContext *ctx) {
-  std::vector<ValueWrapper::ptr> right;
-  auto varSpec = ctx->varSpec(0);
+  for (const auto &varSpec : ctx->varSpec()) {
+    std::vector<ValueWrapper::ptr> right;
 
-  if (varSpec->expressionList()) {
-    auto exprList = varSpec->expressionList()->expression();
-    std::transform(exprList.begin(), exprList.end(), std::back_inserter(right), [this](auto &expr) {
-      EValue res = expr->accept(this);
-      return res.GetValuePtr();
-    });
-  }
-
-  std::optional<TypeWrapper> typeToCast;
-
-  if (varSpec->type_()) {
-    auto typeNode = varSpec->type_();
-    typeToCast = goIrBuilder->GetType(typeNode);
-    if (!typeToCast) {
-      return EValue(Error::Create("Can't find type", ctx));
+    if (varSpec->expressionList()) {
+      auto exprList = varSpec->expressionList()->expression();
+      std::transform(exprList.begin(), exprList.end(), std::back_inserter(right), [this](auto &expr) {
+        EValue res = expr->accept(this);
+        return res.GetValuePtr();
+      });
     }
-  }
 
-  if (right.empty() && !typeToCast) {
-    return EValue(Error::Create("Need type for var declaration", ctx));
-  }
-  auto ids = varSpec->identifierList()->IDENTIFIER();
-  if (!right.empty() && ids.size() != right.size()) {
-    return EValue(Error::Create("Left and right section have a different sizes", ctx));
-  }
-  for (size_t i = 0; i < ids.size(); i++) {
-    auto ty = typeToCast;
-    if (!ty) {
-      ty = right[i]->getType();
-    }
-    auto name = ids[0]->getText();
-    auto mem = goIrBuilder->allocateMemory(*ty);
+    std::optional<TypeWrapper> typeToCast;
 
-    if (!right.empty()) {
-      auto val = goIrBuilder->assign(mem, right[i]);
-      if (!val) {
-        return val;
+    if (varSpec->type_()) {
+      auto typeNode = varSpec->type_();
+      typeToCast = goIrBuilder->GetType(typeNode);
+      if (!typeToCast) {
+        return EValue(Error::Create("Can't find type", ctx));
       }
     }
-    goIrBuilder->addNamedValue(name, mem);
-  }
 
+    if (right.empty() && !typeToCast) {
+      return EValue(Error::Create("Need type for var declaration", ctx));
+    }
+    auto ids = varSpec->identifierList()->IDENTIFIER();
+    if (!right.empty() && ids.size() != right.size()) {
+      return EValue(Error::Create("Left and right section have a different sizes", ctx));
+    }
+    for (size_t i = 0; i < ids.size(); i++) {
+      auto ty = typeToCast;
+      if (!ty) {
+        ty = right[i]->getType();
+      }
+      auto name = ids[i]->getText();
+      auto mem = goIrBuilder->allocateMemory(*ty);
+
+      if (!right.empty()) {
+        auto val = goIrBuilder->assign(mem, right[i]);
+        if (!val) {
+          return val;
+        }
+      }
+      goIrBuilder->addNamedValue(name, mem);
+    }
+  }
   return EValue();
 }
 
@@ -241,11 +241,19 @@ antlrcpp::Any ParserVisitor::visitOperandName(GoParser::OperandNameContext *ctx)
 }
 
 antlrcpp::Any ParserVisitor::visitAssignment(GoParser::AssignmentContext *ctx) {
-//  @todo: multile assign
-  EValue lexpr = ctx->expressionList(0)->expression(0)->accept(this);
-  EValue expr = ctx->expressionList(1)->expression(0)->accept(this);
+  if (ctx->expressionList(0)->expression().size() != ctx->expressionList(0)->expression().size()) {
+    return EValue(Error::Create("Left and right part of assigment should be equal sized", ctx));
+  }
+  for (size_t i = 0; i < ctx->expressionList(0)->expression().size(); i++) {
+    if (ctx->expressionList(0)->expression(i)->getText() == "_") continue;
+    EValue lexpr = ctx->expressionList(0)->expression(i)->accept(this);
+    EValue expr = ctx->expressionList(1)->expression(i)->accept(this);
 
-  return goIrBuilder->assign(lexpr, expr);
+    auto res = goIrBuilder->assign(lexpr, expr);
+    if (!res) return res;
+  }
+
+  return EValue();
 }
 
 antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
@@ -302,7 +310,7 @@ antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
     }
   } else if (ctx->LOGICAL_AND() || ctx->LOGICAL_OR()) {
     EValue left = ctx->expression(0)->accept(this);
-    auto rightBuilder = [this, ctx] () -> EValue {
+    auto rightBuilder = [this, ctx]() -> EValue {
       return ctx->expression(1)->accept(this);
     };
 
@@ -314,13 +322,27 @@ antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
 }
 
 antlrcpp::Any ParserVisitor::visitShortVarDecl(GoParser::ShortVarDeclContext *ctx) {
-  std::string name = ctx->identifierList()->IDENTIFIER(0)->getText();
+  if (ctx->identifierList()->IDENTIFIER().size() != ctx->expressionList()->expression().size()) {
+    return EValue(Error::Create("Left and right part of assigment should be equal sized", ctx));
+  }
 
-  EValue expr = ctx->expressionList()->expression(0)->accept(this);
+  for (int i = 0; i < ctx->identifierList()->IDENTIFIER().size(); i++) {
+    std::string name = ctx->identifierList()->IDENTIFIER(i)->getText();
+    if (name == "_") {
+      continue;
+    }
+    EValue expr = ctx->expressionList()->expression(i)->accept(this);
 
-  auto mem = goIrBuilder->allocateMemory(expr->getType());
-  goIrBuilder->addNamedValue(name, mem);
-  return goIrBuilder->assign(mem, expr);
+    auto mem = goIrBuilder->getNamed(name);
+    if (!mem) {
+      mem = goIrBuilder->allocateMemory(expr->getType());
+      goIrBuilder->addNamedValue(name, mem);
+    }
+
+    goIrBuilder->assign(mem, expr);
+  }
+
+  return EValue();
 }
 
 antlrcpp::Any ParserVisitor::visitIfStmt(GoParser::IfStmtContext *ctx) {
