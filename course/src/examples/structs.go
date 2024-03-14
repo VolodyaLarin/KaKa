@@ -35,7 +35,7 @@ func main() {
 	}
 
 	dog.name = "Rex"
-	dog.isGood = 1
+	dog.isGood = true
 
-	fmt.Printf("Dog %s %d", dog.name, dog.isGood)
+	fmt.Printf("Dog %s %d\n", dog.name, dog.isGood)
 }

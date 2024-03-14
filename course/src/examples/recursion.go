@@ -12,7 +12,7 @@ func fact(n int) int {
 func main() {
 	const n int = 7
 
-	const res int = fact(7)
+	var res = fact(7)
 
-	fmt.Printf("%d", res)
+	fmt.Printf("%d\n", res)
 }

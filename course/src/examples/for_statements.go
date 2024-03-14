@@ -4,7 +4,7 @@ import "fmt"
 
 func main() {
 
-	i := 1
+	var i int = 1
 	for i <= 3 {
 		fmt.Printf("%d\n", i)
 		i = i + 1
@@ -14,7 +14,7 @@ func main() {
 		fmt.Printf("%d\n", j)
 	}
 
-	for i = range 3 {
+	for i := range 3 {
 		fmt.Printf("range %d\n", i)
 	}
 	fmt.Printf("range after i %d\n", i)

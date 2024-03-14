@@ -36,7 +36,7 @@ func measure(g geometry) {
 	fmt.Printf("Площадь: %g см^2, периметр: %g см\n", g.area(), g.perim())
 }
 
-func main() int {
+func main() {
 	var r rect
 	r.width = float64(3)
 	r.height = float64(4)
@@ -48,5 +48,4 @@ func main() int {
 
 	var g2 geometry = c
 	measure(g2)
-	return 0
 }

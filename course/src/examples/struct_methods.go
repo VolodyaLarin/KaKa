@@ -20,7 +20,7 @@ func (r rect) print() {
 	fmt.Printf("area: %d perim %d\n", r.area(), r.perim())
 }
 
-func main() int {
+func main() {
 	var r rect
 	r.width = 10
 	r.height = 12
@@ -31,6 +31,4 @@ func main() int {
 	rp.width = rp.width * 2
 	rp.print()
 	r.print()
-
-	return 0
 }

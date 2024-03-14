@@ -31,7 +31,7 @@ func inputList() *Node {
 func printNode(list *Node) {
 	var node *Node = list
 
-	for 0; node != nil; 0 {
+	for node != nil {
 		fmt.Printf("%d -> ", node.data)
 		node = node.nextNode
 
@@ -42,7 +42,7 @@ func printNode(list *Node) {
 func reverseNode(list *Node) *Node {
 	var newList *Node = nil
 	var node *Node = list
-	for 0; node != nil; 0 {
+	for node != nil {
 		var tmpNode *Node = node.nextNode
 		node.nextNode = newList
 		newList = node
@@ -51,7 +51,7 @@ func reverseNode(list *Node) *Node {
 	return newList
 }
 
-func main() int {
+func main() {
 	var head *Node = inputList()
 
 	printNode(head)
@@ -59,6 +59,4 @@ func main() int {
 	var newList *Node = reverseNode(head)
 
 	printNode(newList)
-
-	return 0
 }
