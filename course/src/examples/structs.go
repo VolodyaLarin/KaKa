@@ -19,7 +19,7 @@ func newPerson(name string) person {
 }
 
 func printPerson(p person) {
-	printf("Person %s: %d age, son.a = %d\n", p.name, p.age, p.son.a)
+	fmt.Printf("Person %s: %d age, son.a = %d\n", p.name, p.age, p.son.a)
 }
 
 func main() {
@@ -37,5 +37,5 @@ func main() {
 	dog.name = "Rex"
 	dog.isGood = 1
 
-	printf("Dog %s %d", dog.name, dog.isGood)
+	fmt.Printf("Dog %s %d", dog.name, dog.isGood)
 }

@@ -10,7 +10,7 @@ func main() {
 
 	sum = float32(number1+int(number3)) + 0.11
 
-	printf("Sum is %f %lf\n", number3, number3/2.1)
+	fmt.Printf("Sum is %f %lf\n", number3, number3/2.1)
 
-	printf("Sum is %g\n", sum)
+	fmt.Printf("Sum is %g\n", sum)
 }

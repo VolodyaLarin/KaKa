@@ -7,9 +7,9 @@ func main() {
 
 	var i int = 0
 	for i = 1; i < 10; i = i + 1 {
-		printf("%d ", sum)
+		fmt.Printf("%d ", sum)
 		sum = sum + i
 	}
 
-	printf("%d\n", sum)
+	fmt.Printf("%d\n", sum)
 }

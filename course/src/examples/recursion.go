@@ -14,5 +14,5 @@ func main() {
 
 	const res int = fact(7)
 
-	printf("%d", res)
+	fmt.Printf("%d", res)
 }

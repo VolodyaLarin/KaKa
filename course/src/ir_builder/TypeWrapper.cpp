@@ -4,6 +4,9 @@
 
 #include "TypeWrapper.h"
 
+llvm::LLVMContext* TypeWrapper::context = nullptr;
+
+
 TypeWrapper::TypeWrapper(llvm::Type *llvmType) : _llvmType(llvmType) {
 
 }
@@ -24,20 +27,19 @@ const TypeDetails &TypeWrapper::getTypeDetails() const {
   return _typeDetails;
 }
 
-TypeWrapper TypeWrapper::GetInt(llvm::LLVMContext &TheContext, bool isSigned, size_t size) {
-  auto ty = TypeWrapper(llvm::Type::getIntNTy(TheContext, size));
+TypeWrapper TypeWrapper::GetInt(bool isSigned, size_t size) {
+  auto ty = TypeWrapper(llvm::Type::getIntNTy(*context, size));
   ty._typeDetails.intInfo = TypeDetails::IntInfo{isSigned, size};
   return std::move(ty);
 }
 
-TypeWrapper TypeWrapper::GetFloat(llvm::LLVMContext &TheContext, bool isLong) {
-  auto ty = TypeWrapper(llvm::Type::getDoubleTy(TheContext));
+TypeWrapper TypeWrapper::GetFloat(bool isLong) {
+  auto ty = TypeWrapper(llvm::Type::getDoubleTy(*context));
   ty._typeDetails.floatInfo = TypeDetails::FloatInfo{64};
   return std::move(ty);
 }
 
-TypeWrapper TypeWrapper::GetStruct(llvm::LLVMContext &TheContext,
-                                   std::vector<std::pair<std::string, TypeWrapper>> &fields,
+TypeWrapper TypeWrapper::GetStruct(std::vector<std::pair<std::string, TypeWrapper>> &fields,
                                    bool isInterface) {
   std::vector<TypeWrapper> fieldsTypes;
   std::vector<llvm::Type *> llvmTypes;
@@ -49,14 +51,13 @@ TypeWrapper TypeWrapper::GetStruct(llvm::LLVMContext &TheContext,
     llvmTypes.push_back(field.second.getType());
   }
 
-  auto ty = TypeWrapper(llvm::StructType::get(TheContext, llvmTypes));
+  auto ty = TypeWrapper(llvm::StructType::get(*context, llvmTypes));
   ty._typeDetails.structInfo = TypeDetails::StructInfo{fieldsTypes, fieldsNames, isInterface};
 
   return std::move(ty);
 }
 
-TypeWrapper TypeWrapper::GetFunction(llvm::LLVMContext &TheContext,
-                                     std::optional<TypeWrapper> retType,
+TypeWrapper TypeWrapper::GetFunction(std::optional<TypeWrapper> retType,
                                      std::vector<TypeWrapper> arguments,
                                      bool isVarArg) {
   std::vector<llvm::Type *> args = {};
@@ -65,7 +66,7 @@ TypeWrapper TypeWrapper::GetFunction(llvm::LLVMContext &TheContext,
   }
 
   llvm::FunctionType
-      *type = llvm::FunctionType::get(retType ? retType->getType() : llvm::Type::getVoidTy(TheContext), args, isVarArg);
+      *type = llvm::FunctionType::get(retType ? retType->getType() : llvm::Type::getVoidTy(*context), args, isVarArg);
 
   auto ty = TypeWrapper(type);
 
@@ -91,37 +92,27 @@ TypeWrapper TypeWrapper::getPointerTo() {
   return ty;
 }
 
-std::optional<TypeWrapper> TypeWrapper::GetTypeByName(const std::string &typeName,
-                                                      llvm::LLVMContext &TheContext,
-                                                      std::map<std::string, TypeWrapper> &typeStorage) {
-  if (typeStorage.find(typeName) == typeStorage.end()) {
-    return {};
-  }
-
-  return typeStorage.find(typeName)->second;
-}
-
 TypeWrapper TypeWrapper::getArrayOf(size_t count) {
   auto ty = TypeWrapper(llvm::ArrayType::get(_llvmType, count));
 
-  ty._typeDetails.arrayInfo = {count, std::make_shared<TypeWrapper>(*this)};
+  ty._typeDetails.arrayInfo = {std::make_shared<TypeWrapper>(*this), count};
 
   return ty;
 }
 
 std::optional<TypeWrapper> TypeWrapper::getHigherType(llvm::LLVMContext &context, TypeWrapper right) {
   if (this->getTypeDetails().pointerInfo && this->getTypeDetails().pointerInfo) {
-    return TypeWrapper::GetPointer(context, TypeWrapper::GetInt(context, false, 0));
+    return TypeWrapper::GetPointer(TypeWrapper::GetInt(false, 0));
   }
 
   if (this->isNumber() && right.isNumber()) {
 
     if (this->getTypeDetails().floatInfo || right.getTypeDetails().floatInfo) {
-      return TypeWrapper::GetFloat(context);
+      return TypeWrapper::GetFloat();
     } else {
       bool isSigned = this->getTypeDetails().intInfo->isSigned || right.getTypeDetails().intInfo->isSigned;
       auto size = std::max(this->getTypeDetails().intInfo->bitSize, right.getTypeDetails().intInfo->bitSize);
-      return TypeWrapper::GetInt(context, isSigned, size);
+      return TypeWrapper::GetInt(isSigned, size);
     }
 
   }
@@ -129,13 +120,13 @@ std::optional<TypeWrapper> TypeWrapper::getHigherType(llvm::LLVMContext &context
   return {};
 }
 
-TypeWrapper TypeWrapper::GetPointer(llvm::LLVMContext &context, std::optional<TypeWrapper> ty) {
+TypeWrapper TypeWrapper::GetPointer(std::optional<TypeWrapper> ty) {
   std::shared_ptr<TypeWrapper> tyPtr;
   if (ty) {
     tyPtr = std::make_shared<TypeWrapper>(*ty);
   }
 
-  auto tw = TypeWrapper(llvm::Type::getInt8PtrTy(context));
+  auto tw = TypeWrapper(llvm::Type::getInt8PtrTy(*context));
   tw._typeDetails.pointerInfo = {tyPtr};
 
   return tw;

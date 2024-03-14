@@ -91,14 +91,40 @@ ValueWrapper EValue::operator*() {
 }
 
 Error EValue::getError() const {
+  if (!error_ptr) {
+    return *Error::Create("Haven't value in EValue");
+  }
   return *error_ptr;
 }
 
-EValue::EValue(ValueWrapper::ptr valuePtr, Error::ptr errorPtr)
-    : value_ptr(std::move(valuePtr)), error_ptr(std::move(errorPtr)) {}
+EValue::EValue(ValueWrapper::ptr valuePtr)
+    : value_ptr(std::move(valuePtr)) {}
+
 EValue::EValue(Error::ptr errorPtr) : value_ptr(nullptr), error_ptr(std::move(errorPtr)) {
 
 }
 const ValueWrapper::ptr &EValue::GetValuePtr() const {
   return value_ptr;
+}
+Package *EValue::GetPackagePtr() const {
+  return package_ptr;
+}
+const std::shared_ptr<TypeWrapper> &EValue::GetTypePtr() const {
+  return type_wrapper_;
+}
+EValue::EValue(Package *package_ptr) : package_ptr(package_ptr) {}
+EValue::EValue(std::shared_ptr<TypeWrapper> type_wrapper) : type_wrapper_(std::move(type_wrapper)) {}
+ValueWrapper *EValue::operator->() {
+  return value_ptr.get();
+}
+bool EValue::hasError() const {
+  return bool(error_ptr);
+}
+EValue::EValue(const TypeWrapper& type_wrapper) : EValue(std::make_shared<TypeWrapper>(type_wrapper)){
+
+}
+
+
+void TypeWrapper::SetContext(llvm::LLVMContext *context) {
+  TypeWrapper::context = context;
 }

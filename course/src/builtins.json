@@ -1,0 +1,247 @@
+{
+  "packages": {
+    "builtin": {
+      "nameHash": "",
+      "types": {
+        "bool": {
+          "type": "int",
+          "integer": {
+            "size": "1",
+            "signed": "false"
+          }
+        },
+        "byte": {
+          "type": "int",
+          "integer": {
+            "size": "8",
+            "signed": "false"
+          }
+        },
+        "float32": {
+          "type": "float",
+          "float": {
+            "size": "64"
+          }
+        },
+        "float64": {
+          "type": "float",
+          "float": {
+            "size": "64"
+          }
+        },
+        "int": {
+          "type": "int",
+          "integer": {
+            "size": "32",
+            "signed": "true"
+          }
+        },
+        "int16": {
+          "type": "int",
+          "integer": {
+            "size": "16",
+            "signed": "true"
+          }
+        },
+        "int32": {
+          "type": "int",
+          "integer": {
+            "size": "32",
+            "signed": "true"
+          }
+        },
+        "int64": {
+          "type": "int",
+          "integer": {
+            "size": "64",
+            "signed": "true"
+          }
+        },
+        "int8": {
+          "type": "int",
+          "integer": {
+            "size": "8",
+            "signed": "true"
+          }
+        },
+        "rune": {
+          "type": "int",
+          "integer": {
+            "size": "8",
+            "signed": "false"
+          }
+        },
+        "string": {
+          "type": "pointer",
+          "pointer": {
+            "type": {
+              "type": "int",
+              "integer": {
+                "size": "8",
+                "signed": "false"
+              }
+            }
+          }
+        },
+        "uint": {
+          "type": "int",
+          "integer": {
+            "size": "32",
+            "signed": "false"
+          }
+        },
+        "uint16": {
+          "type": "int",
+          "integer": {
+            "size": "16",
+            "signed": "false"
+          }
+        },
+        "uint32": {
+          "type": "int",
+          "integer": {
+            "size": "32",
+            "signed": "false"
+          }
+        },
+        "uint64": {
+          "type": "int",
+          "integer": {
+            "size": "64",
+            "signed": "false"
+          }
+        },
+        "uint8": {
+          "type": "int",
+          "integer": {
+            "size": "8",
+            "signed": "false"
+          }
+        }
+      },
+      "functions": {}
+    },
+    "fmt": {
+      "nameHash": "",
+      "types": {},
+      "functions": {
+        "Printf": {
+          "link": "printf",
+          "type": {
+            "type": "function",
+            "function": {
+              "vararg": "true",
+              "arguments": [
+                {
+                  "type": "pointer",
+                  "pointer": {
+                    "type": {
+                      "type": "int",
+                      "integer": {
+                        "size": "8",
+                        "signed": "true"
+                      }
+                    }
+                  }
+                }
+              ],
+              "ret_type": {
+                "type": "int",
+                "integer": {
+                  "size": "32",
+                  "signed": "true"
+                }
+              }
+            }
+          }
+        },
+        "Scanf": {
+          "link": "scanf",
+          "type": {
+            "type": "function",
+            "function": {
+              "vararg": "true",
+              "arguments": [
+                {
+                  "type": "pointer",
+                  "pointer": {
+                    "type": {
+                      "type": "int",
+                      "integer": {
+                        "size": "8",
+                        "signed": "true"
+                      }
+                    }
+                  }
+                }
+              ],
+              "ret_type": {
+                "type": "int",
+                "integer": {
+                  "size": "32",
+                  "signed": "true"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "builtin/memory": {
+      "nameHash": "",
+      "types": {},
+      "functions": {
+        "ALLOCATE": {
+          "link": "ALLOCATE",
+          "type": {
+            "type": "function",
+            "function": {
+              "vararg": "true",
+              "arguments": [
+                {
+                  "type": "int",
+                  "integer": {
+                    "size": "32",
+                    "signed": "true"
+                  }
+                }
+              ],
+              "ret_type": {
+                "type": "pointer",
+                "pointer": ""
+              }
+            }
+          }
+        },
+        "GC_CALL": {
+          "link": "GC_CALL",
+          "type": {
+            "type": "function",
+            "function": {
+              "vararg": "true",
+              "arguments": [
+                {
+                  "type": "int",
+                  "integer": {
+                    "size": "32",
+                    "signed": "true"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "GC_PUSHSTACK": {
+          "link": "GC_PUSHSTACK",
+          "type": {
+            "type": "function",
+            "function": {
+              "vararg": "false",
+              "arguments": ""
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,15 +13,16 @@
 
 class GoIrBuilder {
  public:
-  const Context &GetContext() const;
+  [[nodiscard]] const Context &GetContext() const;
+
+  void setPackageDetails(Package package, std::map<std::string, Package> packages);
   enum BinaryOperation {
     Add, Sub, Mul, Div, Mod, Gt, Lt, Ge, Le, Eq, Ne, BinaryOperationSize
   };
-  void generateBuiltIns();
+  EValue generateBuiltIns();
 
-  Error::ptr createTypeDecl(GoParser::TypeDeclContext *ctx);
+  EValue importPackage(std::string packageName, std::string alias);
 
-  void setModuleName(std::string name);
   EValue createFunction(antlr4::tree::ParseTree *ctx,
                         GoParser::ReceiverContext *receiver,
                         antlr4::tree::TerminalNode *IDENTIFIER,
@@ -33,7 +34,6 @@ class GoIrBuilder {
   EValue createFloatConstant(double num);
   EValue createNil();
   EValue createStringConstant(const std::string &data);
-  std::optional<TypeWrapper> GetType(GoParser::Type_Context *typeContext);
   std::optional<TypeWrapper> GetType(const std::string &name);
   EValue toRHS(EValue val);
   EValue addNamedValue(const std::string &name, EValue value);
@@ -46,6 +46,7 @@ class GoIrBuilder {
   EValue getStructField(EValue, std::string);
   EValue deref(EValue);
   EValue getNamed(const std::string &name);
+  EValue getNamed(const std::string &name, Package *package);
   EValue createBinOperation(BinaryOperation op, EValue left, EValue right);
   EValue createIf(EValue condition, std::function<void()> ifBuilder, std::function<void()> elseBuilder = nullptr);
   EValue createFor(std::function<void()> Init,
@@ -56,8 +57,18 @@ class GoIrBuilder {
   EValue createOr(EValue left, std::function<EValue()> rightBuilder);
   EValue createBreak();
   EValue createContinue();
+  EValue createTypeDecl(std::string name, TypeWrapper type);
  private:
   Context context;
+
+  struct MemoryBuiltins {
+    FunctionWrapper *allocate;
+    FunctionWrapper *gc_push;
+    FunctionWrapper *gc_pop;
+  };
+
+  MemoryBuiltins _memory_builtins;
+  Package *builtin_package;
 
   EValue assignToInterface(ValueWrapper::ptr interface, const ValueWrapper::ptr &value);
   EValue _getByIndex(EValue &left, EValue indexV, const TypeWrapper &type);
@@ -71,6 +82,7 @@ class GoIrBuilder {
   IFContext _createIf(EValue condition, std::function<void()> ifBuilder, std::function<void()> elseBuilder = nullptr);
   EValue _createAndOr(bool isAnd, EValue left, std::function<EValue()> rightBuilder);
   EValue _createIntConstant(int value, bool isSigned, size_t size);
+  std::optional<EValue> _getNamedNoError(const std::string &name, Package *package);
 };
 
 #endif //APP_GOIRBUILDER_H

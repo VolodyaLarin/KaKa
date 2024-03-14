@@ -5,16 +5,16 @@ import "fmt"
 func main() {
 
 	var a = "initial"
-	printf("%s\n", a)
+	fmt.Printf("%s\n", a)
 
 	var b, c int = 1, 2
-	printf("%d %d\n", b, c)
+	fmt.Printf("%d %d\n", b, c)
 
 	var d = true
-	printf("%d\n", d)
+	fmt.Printf("%d\n", d)
 
 	var e int
-	printf("%d\n", e)
+	fmt.Printf("%d\n", e)
 
 	var (
 		product      = "Mobile"
@@ -23,21 +23,21 @@ func main() {
 		inStock      = true
 	)
 
-	printf("%s %d %lf %d\n", product, quantity, price, inStock)
+	fmt.Printf("%s %d %lf %d\n", product, quantity, price, inStock)
 
 	f := "apple"
-	printf("%s\n", f)
+	fmt.Printf("%s\n", f)
 
 	m, n, o := 1, 2, 3
-	printf("%d %d %d\n", m, n, o)
+	fmt.Printf("%d %d %d\n", m, n, o)
 
 	m, _, s := 5, 6, "hello"
 
-	printf("%d %s\n", m, s)
+	fmt.Printf("%d %s\n", m, s)
 
 	m, n, o = 10, 11, 12
-	printf("%d %d %d\n", m, n, o)
+	fmt.Printf("%d %d %d\n", m, n, o)
 
 	m, _, o = 20, 21, 22
-	printf("%d %d\n", m, o)
+	fmt.Printf("%d %d\n", m, o)
 }

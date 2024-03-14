@@ -1,13 +1,15 @@
 package main
 
+import "fmt"
+
 func main() {
 	const size int = 5
 	var a [5]int
 
-	printf("Введите элементы массива (%d штук): ", size)
+	fmt.Printf("Введите элементы массива (%d штук): ", size)
 
 	for i := 0; i < size; i = i + 1 {
-		scanf("%d", &a[i])
+		fmt.Scanf("%d", &a[i])
 	}
 
 	for i := 0; i < size; i = i + 1 {
@@ -21,8 +23,8 @@ func main() {
 	}
 
 	for i := 0; i < size; i = i + 1 {
-		printf("%d ", a[i])
+		fmt.Printf("%d ", a[i])
 	}
 
-	printf("\n")
+	fmt.Printf("\n")
 }

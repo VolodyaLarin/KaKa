@@ -6,48 +6,68 @@
 #include "parser/codegen/GoParserBaseVisitor.h"
 
 #include "ir_builder/ParserVisitor.h"
+#include "loader/PackageJson.h"
 
-
-void print_tree(antlr4::tree::ParseTree *tree) {
-
-}
-
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
 
 using namespace std;
 using namespace antlr4;
 
 int main(int argc, const char *argv[]) {
 
-    if (argc < 2) {
-        std::cerr << "No file name" << std::endl;
+    if (argc <= 5) {
+        std::cerr << "compiler moduleName filenameIn.go filenameOut.ll packageDecl.in.json packageDecl.out.json" << std::endl;
         return -1;
     }
 
-    for (size_t i = 1; i < argc; i++) {
-        std::ifstream stream;
-        stream.open(argv[i]);
-        ANTLRInputStream input(stream);
-        GoLexer lexer(&input);
-        CommonTokenStream tokens(&lexer);
+  std::string moduleName = argv[1];
+  std::string filename = argv[2];
+  std::string filenameOut = argv[3];
+  std::string packageDeclIn = argv[4];
+  std::string packageDeclOut = argv[5];
 
-        GoParser parser(&tokens);
-        GoParser::SourceFileContext *tree = parser.sourceFile();
+  auto irBuilder = std::make_shared<GoIrBuilder>();
+
+  TypeWrapper::SetContext(irBuilder->GetContext().TheContext.get());
 
 
-        ParserVisitor visitor;
-        tree->accept(&visitor);
+  PackagesDetails packages_details = {};
+  {
+    std::ifstream iPackage;
+    iPackage.open(packageDeclIn);
+    auto importer = PackageJson(&iPackage, irBuilder->GetContext().TheContext.get());
+    packages_details = importer.Import();
+  }
 
-        std::string newfilename = argv[i];
-        newfilename += ".ll";
+  std::ifstream stream;
+  stream.open(filename);
+  ANTLRInputStream input(stream);
+  GoLexer lexer(&input);
+  CommonTokenStream tokens(&lexer);
 
-        std::error_code err;
-        auto os = llvm::raw_fd_ostream(newfilename, err);
-        visitor.GetGoIrBuilder()->GetContext().TheModule->print(os, nullptr);
+  GoParser parser(&tokens);
+  GoParser::SourceFileContext *tree = parser.sourceFile();
 
-        if (err) {
-            return err.value();
-        }
+  Package cur = {moduleName,  moduleName};
+  irBuilder->setPackageDetails(cur, packages_details.packages);
 
-    }
-    return 0;
+  ParserVisitor visitor(irBuilder);
+  tree->accept(&visitor);
+
+  std::error_code err;
+  auto os = llvm::raw_fd_ostream(filenameOut, err);
+  irBuilder->GetContext().TheModule->print(os, nullptr);
+  if (err) {
+    return err.value();
+  }
+
+
+  auto curPack =irBuilder->GetContext().currentPackage;
+
+  packages_details.packages.insert({moduleName, curPack});
+
+  std::ofstream jsonExportStream(packageDeclOut);
+  auto exporter = PackageJson(&jsonExportStream);
+  exporter.Export(packages_details);
 }

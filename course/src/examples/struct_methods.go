@@ -16,8 +16,8 @@ func (r rect) perim() int {
 }
 
 func (r rect) print() {
-	printf("W: %d H: %d\n", r.width, r.height)
-	printf("area: %d perim %d\n", r.area(), r.perim())
+	fmt.Printf("W: %d H: %d\n", r.width, r.height)
+	fmt.Printf("area: %d perim %d\n", r.area(), r.perim())
 }
 
 func main() int {

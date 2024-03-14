@@ -13,13 +13,13 @@
 class FunctionWrapper {
  public:
 
-  std::string ModuleId = "";
   std::string Name = "";
+  std::string LinkName = "";
 
   TypeWrapper type;
   llvm::Function *Function;
 
-  FunctionWrapper(const std::string &moduleId, const std::string &name, TypeWrapper type, llvm::Function *function);
+  FunctionWrapper(std::string name, TypeWrapper type, llvm::Function *function = nullptr, std::string linkName = "");
 
   ValueWrapper::ptr getValue();
 

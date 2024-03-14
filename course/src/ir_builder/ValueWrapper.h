@@ -41,21 +41,31 @@ class ValueWrapper {
   ValueWrapper::ptr castTo(llvm::IRBuilder<> &builder, TypeWrapper ty) const;
 };
 
+class Package;
 class EValue {
-  ValueWrapper::ptr value_ptr;
-  Error::ptr error_ptr;
+  Package *package_ptr = nullptr;
+  std::shared_ptr<TypeWrapper> type_wrapper_ = nullptr;
+  ValueWrapper::ptr value_ptr = nullptr;
+  Error::ptr error_ptr = nullptr;
  public:
+  EValue(ValueWrapper::ptr valuePtr = nullptr);
+  EValue(Error::ptr errorPtr);
+  EValue(Package *package_ptr);
+  EValue(std::shared_ptr<TypeWrapper> type_wrapper);
+  EValue(const TypeWrapper& type_wrapper);
+
   explicit operator bool() const;
 
-  ValueWrapper operator*();
-
-  ValueWrapper *operator->() {
-    return value_ptr.get();
-  }
+  const std::shared_ptr<TypeWrapper> &GetTypePtr() const;
+  [[nodiscard]] const ValueWrapper::ptr &GetValuePtr() const;
   [[nodiscard]] Error getError() const;
-  const ValueWrapper::ptr &GetValuePtr() const;
-  EValue(ValueWrapper::ptr valuePtr = nullptr, Error::ptr errorPtr = nullptr);
-  EValue(Error::ptr errorPtr);
+  Package *GetPackagePtr() const;
+
+  [[nodiscard]] bool hasError() const;
+
+  ValueWrapper operator*();
+  ValueWrapper *operator->();
+
 };
 
 #endif //APP_VALUEWRAPPER_H

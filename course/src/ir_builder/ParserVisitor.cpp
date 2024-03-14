@@ -8,8 +8,10 @@
 #include "ParserVisitor.h"
 
 antlrcpp::Any ParserVisitor::visitSourceFile(GoParser::SourceFileContext *ctx) {
-  goIrBuilder->setModuleName(ctx->packageClause()->IDENTIFIER()->getText());
-  goIrBuilder->generateBuiltIns();
+  auto res = goIrBuilder->generateBuiltIns();
+  if (res.hasError()) {
+    return res;
+  }
 
   for (auto &child : ctx->children) {
     child->accept(this);
@@ -19,28 +21,142 @@ antlrcpp::Any ParserVisitor::visitSourceFile(GoParser::SourceFileContext *ctx) {
 }
 
 antlrcpp::Any ParserVisitor::visitImportDecl(GoParser::ImportDeclContext *ctx) {
-  std::cerr << "Warning: Import statement is not supported: " << ctx->getText() << std::endl;
-  return ValueWrapper::ptr(nullptr);
-}
+  for (auto spec: ctx->importSpec()) {
+    auto path = spec->importPath()->getText();
+    path = path.substr(1, path.size()-2);
 
-antlrcpp::Any ParserVisitor::visitTypeDecl(GoParser::TypeDeclContext *ctx) {
-  auto err = goIrBuilder->createTypeDecl(ctx);
-  if (err) {
-    std::cerr << err->toString() << std::endl;
+    std::string alias = "";
+    if (spec->alias) {
+      alias = spec->alias->getText();
+    }
+
+    auto res = goIrBuilder->importPackage(path, alias);
+    if (res.hasError()) {
+      return res;
+    }
   }
   return EValue();
 }
 
+antlrcpp::Any ParserVisitor::visitTypeDecl(GoParser::TypeDeclContext *ctx) {
+  if (ctx->typeSpec(0)->aliasDecl()) {
+    return EValue(Error::Create("Warning: Aliases is not supported", ctx));
+  }
+
+  if (ctx->typeSpec().size() > 1) {
+    // @todo: support multiple;
+    Error::Create("Warning: multiple type declaration is not supported. Use first spec", ctx);
+  }
+
+  auto def = ctx->typeSpec(0)->typeDef();
+
+  auto defName = def->IDENTIFIER()->getText();
+  EValue type = def->type_()->accept(this);
+  if (!type.GetTypePtr()) {
+    return EValue(Error::Create("Error: Can't declare type " + defName, ctx));
+  }
+  return goIrBuilder->createTypeDecl(defName, *type.GetTypePtr());
+}
+antlrcpp::Any ParserVisitor::visitType_(GoParser::Type_Context *ctx) {
+  if (ctx->typeName()) {
+    auto typeName = ctx->typeName()->getText();
+    return goIrBuilder->getNamed(typeName);
+  }
+  if (ctx->type_()) {
+    return ctx->type_()->accept(this);
+  }
+  if (!ctx->typeLit()) {
+    return EValue(Error::Create("This type isn't supported. Smth go wrong", ctx));
+  }
+  if (ctx->typeLit()->interfaceType()) {
+    auto interfaceTN = ctx->typeLit()->interfaceType();
+
+    std::vector<std::pair<std::string, TypeWrapper>> fields = {{"_", TypeWrapper::GetPointer({})},};
+
+    for (auto &method : interfaceTN->methodSpec()) {
+      auto name = method->IDENTIFIER()->getText();
+      std::optional<TypeWrapper> result;
+
+      if (method->result()) {
+        EValue resultEV = method->result()->type_()->accept(this);
+        if (!resultEV.GetTypePtr()) {
+          return resultEV;
+        }
+        result = *resultEV.GetTypePtr();
+      }
+
+      std::vector<TypeWrapper> params = {TypeWrapper::GetPointer({})};
+      for (auto decl : method->parameters()->parameterDecl()) {
+        EValue ty = decl->type_()->accept(this);
+        if (!ty.GetTypePtr()) {
+          return ty;
+        }
+        params.push_back(*ty.GetTypePtr());
+      }
+
+      auto func = TypeWrapper::GetFunction(result, params).getPointerTo();
+      fields.emplace_back(name, func);
+    }
+
+    return EValue(TypeWrapper::GetStruct(fields, true));
+  }
+
+  if (ctx->typeLit()->structType()) {
+    auto structTN = ctx->typeLit()->structType();
+
+    std::vector<std::pair<std::string, TypeWrapper>> fields = {};
+
+    for (auto &field : structTN->fieldDecl()) {
+      // @todo support multiple
+      if (field->identifierList()->IDENTIFIER().size() > 1) {
+        Error::Create("Warning: multiple field declare is not supported", ctx);
+      }
+      auto fieldName = field->identifierList()->IDENTIFIER(0)->getText();
+      EValue fieldT = field->type_()->accept(this);
+      if (!fieldT.GetTypePtr()) {
+        return fieldT;
+      }
+
+      fields.emplace_back(fieldName, *fieldT.GetTypePtr());
+    }
+
+    return EValue(TypeWrapper::GetStruct(fields));
+
+  }
+
+  if (ctx->typeLit()->arrayType()) {
+    auto child = ctx->typeLit()->arrayType()->elementType()->type_();
+    EValue childType = child->accept(this);
+    if (!childType.GetTypePtr()) {
+      return childType;
+    }
+    auto countText = ctx->typeLit()->arrayType()->arrayLength()->getText();
+    auto count = atoi(countText.c_str());
+
+    if (count <= 0) {
+      return EValue(Error::Create( "Can't create array with length " + std::to_string(count), ctx));
+    }
+
+    return EValue(childType.GetTypePtr()->getArrayOf(count));
+  }
+  if (ctx->typeLit()->pointerType()) {
+    EValue pointTo = ctx->typeLit()->pointerType()->type_()->accept(this);
+    if (!pointTo.GetTypePtr()) {
+      Error::Create("Warning: Declare as void pointer", ctx);
+      return EValue(TypeWrapper::GetPointer({}));
+    }
+
+    return EValue(TypeWrapper::GetPointer(*pointTo.GetTypePtr()));
+
+  }
+  return EValue(Error::Create("This type is not supported", ctx));
+}
 antlrcpp::Any ParserVisitor::visitFunctionDecl(GoParser::FunctionDeclContext *ctx) {
   auto res = goIrBuilder->createFunction(ctx, nullptr, ctx->IDENTIFIER(), ctx->signature(), ctx->block(), this);
   if (!res) {
     std::cerr << res.getError().toString() << std::endl;
   }
   return EValue();
-}
-
-ParserVisitor::ParserVisitor() {
-  goIrBuilder = std::make_shared<GoIrBuilder>();
 }
 
 antlrcpp::Any ParserVisitor::visitStatement(GoParser::StatementContext *ctx) {
@@ -91,12 +207,12 @@ antlrcpp::Any ParserVisitor::visitString_(GoParser::String_Context *ctx) {
 antlrcpp::Any ParserVisitor::visitConstDecl(GoParser::ConstDeclContext *ctx) {
   // @todo support multiple declaration
   // @todo: compute type
-  auto typeNode = ctx->constSpec()[0]->type_();
-  auto llvmType = goIrBuilder->GetType(typeNode);
-  if (!llvmType) {
-    std::cerr << "Can't find type : " << ctx->getText() << std::endl;
-    return ValueWrapper::ptr(nullptr);
+  EValue typeNode = ctx->constSpec()[0]->type_()->accept(this);
+  if (!typeNode.GetTypePtr()) {
+    return EValue(Error::Create("Can't find type", ctx));
   }
+
+  auto llvmType = typeNode.GetTypePtr();
 
   EValue expr = ctx->constSpec(0)->expressionList()->expression(0)->accept(this);
   if (!expr) {
@@ -139,11 +255,11 @@ antlrcpp::Any ParserVisitor::visitVarDecl(GoParser::VarDeclContext *ctx) {
     std::optional<TypeWrapper> typeToCast;
 
     if (varSpec->type_()) {
-      auto typeNode = varSpec->type_();
-      typeToCast = goIrBuilder->GetType(typeNode);
-      if (!typeToCast) {
+      EValue typeV = varSpec->type_()->accept(this);
+      if (!typeV.GetTypePtr()) {
         return EValue(Error::Create("Can't find type", ctx));
       }
+      typeToCast = *typeV.GetTypePtr();
     }
 
     if (right.empty() && !typeToCast) {
@@ -176,10 +292,8 @@ antlrcpp::Any ParserVisitor::visitVarDecl(GoParser::VarDeclContext *ctx) {
 antlrcpp::Any ParserVisitor::visitPrimaryExpr(GoParser::PrimaryExprContext *ctx) {
   if (ctx->arguments()) {
     EValue function = ctx->primaryExpr()->accept(this);
-    if (!function) {
-      // try check casting
-      auto function_name = ctx->primaryExpr()->getText();
-      auto type2Cast = goIrBuilder->GetType(function_name);
+    if (function.GetTypePtr()) {
+      auto type2Cast = function.GetTypePtr();
       if (!type2Cast) {
         return function;
       }
@@ -215,6 +329,12 @@ antlrcpp::Any ParserVisitor::visitPrimaryExpr(GoParser::PrimaryExprContext *ctx)
     EValue left = ctx->primaryExpr()->accept(this);
     auto fieldName = ctx->IDENTIFIER()->getText();
 
+    if (left.GetPackagePtr()) {
+      return goIrBuilder->getNamed(fieldName, left.GetPackagePtr());
+    }
+    if (!left) {
+      return left;
+    }
     return goIrBuilder->getStructField(left, fieldName);
   }
 
@@ -436,12 +556,11 @@ antlrcpp::Any ParserVisitor::visitForStmt(GoParser::ForStmtContext *ctx) {
 
   return goIrBuilder->createFor(Init, Cond, After, Block);
 }
-const std::shared_ptr<GoIrBuilder> &ParserVisitor::GetGoIrBuilder() const {
-  return goIrBuilder;
-}
+
 antlrcpp::Any ParserVisitor::visitBreakStmt(GoParser::BreakStmtContext *ctx) {
   return goIrBuilder->createBreak();
 }
 antlrcpp::Any ParserVisitor::visitContinueStmt(GoParser::ContinueStmtContext *ctx) {
   return goIrBuilder->createContinue();
 }
+ParserVisitor::ParserVisitor(const std::shared_ptr<GoIrBuilder> &go_ir_builder) : goIrBuilder(go_ir_builder) {}

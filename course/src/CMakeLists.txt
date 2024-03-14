@@ -24,5 +24,10 @@ add_executable(app
         ir_builder/GoIrBuilder.cpp
         ir_builder/GoIrBuilder.h
         ir_builder/Error.cpp
-        ir_builder/Error.h)
+        ir_builder/Error.h
+        ir_builder/Package.cpp
+        ir_builder/Package.h
+        loader/PackageJson.cpp
+        loader/PackageJson.h
+)
 

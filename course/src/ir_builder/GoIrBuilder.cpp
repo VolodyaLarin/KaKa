@@ -7,78 +7,27 @@
 #include <utility>
 #include <llvm/IR/Verifier.h>
 
-void GoIrBuilder::generateBuiltIns() {
-  std::vector<FunctionWrapper> functions = {FunctionWrapper("",
-                                                            "printf",
-                                                            TypeWrapper::GetFunction(*context.TheContext,
-                                                                                     TypeWrapper::GetInt(*context.TheContext,
-                                                                                                         true,
-                                                                                                         32),
-                                                                                     std::vector<TypeWrapper>{
-                                                                                         TypeWrapper::GetInt(*context.TheContext,
-                                                                                                             true,
-                                                                                                             8).getPointerTo()},
-                                                                                     true),
-                                                            nullptr), FunctionWrapper("",
-                                                                                      "scanf",
-                                                                                      TypeWrapper::GetFunction(*context.TheContext,
-                                                                                                               TypeWrapper::GetInt(
-                                                                                                                   *context.TheContext,
-                                                                                                                   true,
-                                                                                                                   32),
-                                                                                                               std::vector<
-                                                                                                                   TypeWrapper>{
-                                                                                                                   TypeWrapper::GetInt(
-                                                                                                                       *context.TheContext,
-                                                                                                                       true,
-                                                                                                                       8).getPointerTo()},
-                                                                                                               true),
-                                                                                      nullptr), FunctionWrapper("",
-                                                                                                                "ALLOCATE",
-                                                                                                                TypeWrapper::GetFunction(
-                                                                                                                    *context.TheContext,
-                                                                                                                    TypeWrapper::GetPointer(
-                                                                                                                        *context.TheContext,
-                                                                                                                        {}),
-                                                                                                                    std::vector<
-                                                                                                                        TypeWrapper>{
-                                                                                                                        TypeWrapper::GetInt(
-                                                                                                                            *context.TheContext,
-                                                                                                                            true,
-                                                                                                                            32)},
-                                                                                                                    true),
-                                                                                                                nullptr),
-                                            FunctionWrapper("",
-                                                            "GC_CALL",
-                                                            TypeWrapper::GetFunction(*context.TheContext,
-                                                                                     {},
-                                                                                     std::vector<TypeWrapper>{
-                                                                                         TypeWrapper::GetInt(*context.TheContext,
-                                                                                                             true,
-                                                                                                             32)},
-                                                                                     true),
-                                                            nullptr), FunctionWrapper("",
-                                                                                      "GC_PUSHSTACK",
-                                                                                      TypeWrapper::GetFunction(*context.TheContext,
-                                                                                                               {},
-                                                                                                               {},
-                                                                                                               false),
-                                                                                      nullptr),};
-
-  for (auto &func : functions) {
-    auto fId = context.GetFunctionID(func.Name);
-    auto f = llvm::Function::Create((llvm::FunctionType *) func.type.getType(),
-                                    llvm::Function::ExternalLinkage,
-                                    func.Name,
-                                    *context.TheModule);
-
-    func.Function = f;
-    context.Functions.insert({fId, func});
+EValue GoIrBuilder::generateBuiltIns() {
+  auto builtin = importPackage("builtin", ".");
+  if (builtin.hasError()) {
+    return builtin;
   }
+  builtin_package = builtin.GetPackagePtr();
+
+  auto mempackage = importPackage("builtin/memory", ".");
+  if (mempackage.hasError()) {
+    return mempackage;
+  }
+
+  _memory_builtins.allocate = &mempackage.GetPackagePtr()->GetFunctions().find("ALLOCATE")->second;
+  _memory_builtins.gc_pop = &mempackage.GetPackagePtr()->GetFunctions().find("GC_CALL")->second;
+  _memory_builtins.gc_push = &mempackage.GetPackagePtr()->GetFunctions().find("GC_PUSHSTACK")->second;
 
   context.stackController.PushLevel(nullptr);
   context.stackController.AddNamedValue("true", _createIntConstant(1, false, 1).GetValuePtr());
   context.stackController.AddNamedValue("false", _createIntConstant(0, false, 1).GetValuePtr());
+
+  return {};
 }
 
 EValue GoIrBuilder::assignToInterface(ValueWrapper::ptr interface, const ValueWrapper::ptr &value) {
@@ -99,10 +48,11 @@ EValue GoIrBuilder::assignToInterface(ValueWrapper::ptr interface, const ValueWr
       continue;
     }
 
-    auto method = context.Functions.find(context.GetFunctionID(context.GetMethodId(field, value->getType().getName())));
-    if (method == context.Functions.end()) {
-      return {{}, Error::Create("Can't find method " + field + ":"
-                                    + context.GetFunctionID(context.GetMethodId(field, value->getType().getName())))};
+    auto method = context.currentPackage.GetFunctions().find(context.GetFunctionID(context.GetMethodId(field,
+                                                                                                       value->getType().getName())));
+    if (method == context.currentPackage.GetFunctions().end()) {
+      return Error::Create("Can't find method " + field + ":"
+                               + context.GetFunctionID(context.GetMethodId(field, value->getType().getName())));
     }
 
     values.push_back(method->second.Function);
@@ -123,23 +73,12 @@ EValue GoIrBuilder::assignToInterface(ValueWrapper::ptr interface, const ValueWr
   return interface;
 
 }
-Error::ptr GoIrBuilder::createTypeDecl(GoParser::TypeDeclContext *ctx) {
-  if (ctx->typeSpec(0)->aliasDecl()) {
-    return Error::Create("Warning: Aliases is not supported", ctx);
-  }
-  auto def = ctx->typeSpec(0)->typeDef();
-
-  auto defName = def->IDENTIFIER()->getText();
-  auto type = context.GetType(def->type_());
-  if (!type) {
-    return Error::Create("Error: Can't declare type " + defName, ctx);
-  }
-  type->setName(defName);
-
-  context.Types.insert({defName, *type});
-
-  return nullptr;
+EValue GoIrBuilder::createTypeDecl(std::string name, TypeWrapper type) {
+  type.setName(name);
+  context.currentPackage.GetTypes().insert({name, type});
+  return type;
 }
+
 EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
                                    GoParser::ReceiverContext *receiver,
                                    antlr4::tree::TerminalNode *IDENTIFIER,
@@ -153,47 +92,46 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
   bool recVPtr = false;
 
   if (receiver) {
-    recvTy = context.GetType(receiver->parameters()->parameterDecl(0)->type_());
-    if (!recvTy) {
-      return {{}, Error::Create("Error: can't create method of undeclared struct", signature)};
+    EValue recvTyEV = receiver->parameters()->parameterDecl(0)->type_()->accept(visitor);
+    if (!recvTyEV.GetTypePtr()) {
+      return Error::Create("Error: can't create method of undeclared struct", signature);
     }
-
+    recvTy = *recvTyEV.GetTypePtr();
     if (recvTy->getTypeDetails().pointerInfo) {
       if (!recvTy->getTypeDetails().pointerInfo->type) {
-        return {{}, Error::Create("Error: can't create method of void *", receiver)};
+        return Error::Create("Error: can't create method of void *", receiver);
       }
       recvTy = *recvTy->getTypeDetails().pointerInfo->type;
       recVPtr = true;
     }
 
     if (!recvTy->getTypeDetails().structInfo) {
-      return {{}, Error::Create("Error: can't create not a struct method", receiver)};
+      return Error::Create("Error: can't create not a struct method", receiver);
     }
 
     args.push_back(recvTy->getPointerTo());
   }
 
   for (auto arg : signature->parameters()->parameterDecl()) {
-    auto type = context.GetType(arg->type_());
-    if (!type) {
-      std::cerr << "Error: Can't find type : " << ctx->getText() << std::endl;
-      return {{}, Error::Create("Can't find type", arg)};
+    EValue type = arg->type_()->accept(visitor);
+    if (!type.GetTypePtr()) {
+      return Error::Create("Can't find type", arg);
     }
     for (auto argN : arg->identifierList()->IDENTIFIER()) {
-      args.push_back(*type);
+      args.push_back(*type.GetTypePtr());
     }
   }
 
   if (signature->result()) {
     auto goType = signature->result()->type_();
     if (!goType) {
-      return {{}, Error::Create("Error: Not supported multiple return", signature->result())};
+      return Error::Create("Error: Not supported multiple return", signature->result());
     }
-    auto type = context.GetType(goType);
-    if (!type) {
-      return {{}, Error::Create("Can't find type", signature->result())};
+    EValue type = goType->accept(visitor);
+    if (!type.GetTypePtr()) {
+      return Error::Create("Can't find type", signature->result());
     }
-    retT = *type;
+    retT = *type.GetTypePtr();
   }
 
   auto nameCode = IDENTIFIER->getText();
@@ -201,18 +139,18 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
     nameCode = context.GetMethodId(nameCode, recvTy->getName());
   }
 
-  auto name = context.GetFunctionID(nameCode);
+  auto linkName = context.currentPackage.GetNameHash() + "_" + nameCode;
 
-  auto funcT = TypeWrapper::GetFunction(*context.TheContext, retT, args, false);
+  auto funcT = TypeWrapper::GetFunction(retT, args, false);
   auto func = llvm::Function::Create((llvm::FunctionType *) funcT.getType(),
                                      llvm::Function::ExternalLinkage,
-                                     name,
+                                     linkName,
                                      *context.TheModule);
-  auto funcWrap = FunctionWrapper(context.ModuleName, nameCode, funcT, func);
-  context.Functions.insert({name, funcWrap});
+  auto funcWrap = FunctionWrapper(nameCode, funcT, func, linkName);
+  context.currentPackage.GetFunctions().insert({nameCode, funcWrap});
 
   if (!block) {
-    return {funcWrap.getValue(), {}};
+    return funcWrap.getValue();
   }
 
   auto BB = llvm::BasicBlock::Create(*context.TheContext, "entry", func);
@@ -237,7 +175,11 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
   }
 
   for (auto arg : signature->parameters()->parameterDecl()) {
-    auto ty = context.GetType(arg->type_());
+    EValue tyE = arg->type_()->accept(visitor);
+    if (!tyE.GetTypePtr()) {
+      return tyE;
+    }
+    auto ty = tyE.GetTypePtr();
     for (auto argN : arg->identifierList()->IDENTIFIER()) {
       auto llvmArg = func->getArg(i);
       i++;
@@ -251,7 +193,7 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
   }
 
   if (!block->statementList()) {
-    return {{}, Error::Create("Error: Can't create function " + nameCode + ". Not found function body.", nullptr)};
+    return Error::Create("Error: Can't create function " + linkName + ". Not found function body.", nullptr);
   }
 
   for (auto statement : block->statementList()->statement()) {
@@ -282,49 +224,44 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
     std::string err_string;
     llvm::raw_string_ostream st(err_string);
     if (llvm::verifyFunction(*func, &st)) {
-      return {{}, Error::Create("Lvvm function verify error: " + err_string, ctx)};
+      return Error::Create("Lvvm function verify error: " + err_string, ctx);
     }
   }
-  return {funcWrap.getValue(), {}};
+  return funcWrap.getValue();
 }
 EValue GoIrBuilder::_createIntConstant(int value, bool isSigned, size_t size) {
-  TypeWrapper type = TypeWrapper::GetInt(*context.TheContext, isSigned, size);
+  TypeWrapper type = TypeWrapper::GetInt(isSigned, size);
   llvm::Value *retv = llvm::ConstantInt::get(*context.TheContext, llvm::APInt(size, value, isSigned));
 
-  return {ValueWrapper::Create(true, type, retv), {}};
+  return ValueWrapper::Create(true, type, retv);
 }
 EValue GoIrBuilder::createIntConstant(int value) {
   return _createIntConstant(value, true, 32);
 }
 EValue GoIrBuilder::createFloatConstant(double num) {
-  auto ty = TypeWrapper::GetFloat(*context.TheContext);
-  return {ValueWrapper::Create(true, ty, llvm::ConstantFP::get(ty.getType(), llvm::APFloat(num))), {}};
+  auto ty = TypeWrapper::GetFloat();
+  return ValueWrapper::Create(true, ty, llvm::ConstantFP::get(ty.getType(), llvm::APFloat(num)));
 }
 EValue GoIrBuilder::createNil() {
-  auto ty = TypeWrapper::GetPointer(*context.TheContext, {});
-  return {ValueWrapper::Create(true, ty, llvm::ConstantPointerNull::get((llvm::PointerType *) ty.getType())), {}};
-}
-void GoIrBuilder::setModuleName(std::string name) {
-  context.ModuleName = std::move(name);
+  auto ty = TypeWrapper::GetPointer({});
+  return ValueWrapper::Create(true, ty, llvm::ConstantPointerNull::get((llvm::PointerType *) ty.getType()));
 }
 EValue GoIrBuilder::createStringConstant(const std::string &data) {
   auto strValue = llvm::ConstantDataArray::getString(*context.TheContext, data, true);
 
-  TypeWrapper charTy = TypeWrapper::GetInt(*context.TheContext, false, 8);
+  TypeWrapper charTy = TypeWrapper::GetInt(false, 8);
   auto value = allocateMemory(charTy, data.size() + 2)->getPointerTo();
 
   context.Builder->CreateStore(strValue, value->getValue());
 
   return value;
 }
-std::optional<TypeWrapper> GoIrBuilder::GetType(GoParser::Type_Context *typeContext) {
-  return context.GetType(typeContext);
-}
+
 EValue GoIrBuilder::toRHS(EValue val) {
   if (!val) {
     return val;
   }
-  return {val->toRHS(*context.Builder), {}};
+  return val->toRHS(*context.Builder);
 }
 EValue GoIrBuilder::addNamedValue(const std::string &name, EValue value) {
   if (!value) {
@@ -339,13 +276,17 @@ EValue GoIrBuilder::addNamedValue(const std::string &name, EValue value) {
 EValue GoIrBuilder::createReturn(std::vector<EValue> values) {
   if (values.empty()) {
     context.Builder->CreateRetVoid();
-    return {nullptr, nullptr};
+    return nullptr;
   }
 
   if (values.size() > 1) {
     return Error::Create("Can't return more than one value");
   }
   auto expr = toRHS(values[0]);
+  if (!expr) {
+    return expr;
+  }
+
   context.Builder->CreateRet(expr->getValue());
 
   return expr;
@@ -354,14 +295,15 @@ EValue GoIrBuilder::allocateMemory(TypeWrapper ty, size_t count, const std::stri
   auto offsets = ty.getLinkPositions(context.TheModule->getDataLayout());
   auto typeSize = ty.getSizeOf(context.TheModule->getDataLayout());
   std::vector<llvm::Value *> args = {llvm::ConstantInt::get(*context.TheContext, llvm::APInt(32, typeSize * count)),
-                                     llvm::ConstantInt::get(*context.TheContext, llvm::APInt(32, offsets.size()))};
+                                     llvm::ConstantInt::get(*context.TheContext,
+                                                            llvm::APInt(32, offsets.size() * count))};
   for (int i = 0; i < count; i++) {
     for (auto offset : offsets) {
       args.push_back(llvm::ConstantInt::get(*context.TheContext, llvm::APInt(32, typeSize * i + offset)));
     }
   }
 
-  auto funcRes = context.Builder->CreateCall(context.Functions.find("main_ALLOCATE")->second.Function, args);
+  auto funcRes = context.Builder->CreateCall(_memory_builtins.allocate->Function, args);
   funcRes->setName(name);
 
   return ValueWrapper::Create(false, ty, funcRes);
@@ -397,7 +339,11 @@ EValue GoIrBuilder::cast(EValue value, const TypeWrapper &type) {
   return res;
 }
 std::optional<TypeWrapper> GoIrBuilder::GetType(const std::string &name) {
-  return TypeWrapper::GetTypeByName(name, *context.TheContext, context.Types);
+  auto val = getNamed(name);
+  if (val.GetTypePtr()) {
+    return *val.GetTypePtr();
+  }
+  return {};
 }
 EValue GoIrBuilder::createCall(EValue function, std::vector<EValue> ArgsV) {
   if (function && function->getType().getTypeDetails().pointerInfo) {
@@ -444,7 +390,7 @@ EValue GoIrBuilder::createCall(EValue function, std::vector<EValue> ArgsV) {
     values.emplace_back(arg->getValue());
   }
 
-  context.Builder->CreateCall(context.Functions.find("main_GC_PUSHSTACK")->second.Function, {});
+  context.Builder->CreateCall(_memory_builtins.gc_push->Function, {});
 
   llvm::Value *value =
       context.Builder->CreateCall(llvm::FunctionCallee((llvm::FunctionType *) function->getType().getType(),
@@ -461,7 +407,7 @@ EValue GoIrBuilder::createCall(EValue function, std::vector<EValue> ArgsV) {
     }
   }
   gcVals.insert(gcVals.begin(), llvm::ConstantInt::get(*context.TheContext, llvm::APInt(32, gcVals.size())));
-  context.Builder->CreateCall(context.Functions.find("main_GC_CALL")->second.Function, gcVals);
+  context.Builder->CreateCall(_memory_builtins.gc_pop->Function, gcVals);
 
   if (!retType) {
     return {};
@@ -478,6 +424,9 @@ EValue GoIrBuilder::getByIndex(EValue left, EValue indexV) {
 
 }
 EValue GoIrBuilder::_getByIndex(EValue &left, EValue indexV, const TypeWrapper &type) {
+  if (!left) return left;
+  if (!indexV) return indexV;
+
   if (left->isConstant()) {
     auto val = context.Builder->CreateExtractElement(left->getValue(), indexV->getValue());
     return ValueWrapper::Create(true, type, val);
@@ -498,9 +447,9 @@ EValue GoIrBuilder::getStructField(EValue left, std::string fieldName) {
   auto structInfo = left->getType().getTypeDetails().structInfo;
   if (!structInfo) return Error::Create("Dot operation supports only for structs");
 
-  auto
-      method = context.Functions.find(context.GetFunctionID(context.GetMethodId(fieldName, left->getType().getName())));
-  if (method != context.Functions.end()) {
+  auto method = context.currentPackage.GetFunctions().find(context.GetFunctionID(context.GetMethodId(fieldName,
+                                                                                                     left->getType().getName())));
+  if (method != context.currentPackage.GetFunctions().end()) {
     return method->second.bind(left->getPointerTo());
   }
 
@@ -520,7 +469,7 @@ EValue GoIrBuilder::getStructField(EValue left, std::string fieldName) {
 
   auto binding = left;
   if (structInfo->isInterface) {
-    binding = _getByIndex(left, createIntConstant(0), TypeWrapper::GetPointer(*context.TheContext, {}));
+    binding = _getByIndex(left, createIntConstant(0), TypeWrapper::GetPointer({}));
   }
 
   return ValueWrapper::Create(res->isConstant(), *fieldType, res->getValue(), binding.GetValuePtr());
@@ -536,14 +485,43 @@ EValue GoIrBuilder::deref(EValue value) {
   return ValueWrapper::Create(false, *res->getType().getTypeDetails().pointerInfo->type, res->getValue());
 }
 EValue GoIrBuilder::getNamed(const std::string &name) {
-  auto func = context.Functions.find(context.GetFunctionID(name));
-  if (func != context.Functions.end()) {
+  auto res = context.stackController.GetNamedValue(name);
+  if (res) {
+    return res;
+  }
+  auto val = _getNamedNoError(name, &context.currentPackage);
+  if (val) {
+    return *val;
+  }
+  val = _getNamedNoError(name, builtin_package);
+  if (val) {
+    return *val;
+  }
+  auto package = context.importedPackages.find(name);
+  if (package != context.importedPackages.end()) {
+    return package->second;
+  }
+
+  return Error::Create("Can't find id: " + name + " in global");
+}
+
+std::optional<EValue> GoIrBuilder::_getNamedNoError(const std::string &name, Package *package) {
+  auto func = package->GetFunctions().find(name);
+  if (func != package->GetFunctions().end()) {
     return func->second.getValue();
   }
-  auto res = context.stackController.GetNamedValue(name);
-  if (!res) return Error::Create("Can't find id: " + name);
 
-  return res;
+  auto type = package->GetTypes().find(name);
+  if (type != package->GetTypes().end()) {
+    return type->second;
+  }
+  return {};
+}
+
+EValue GoIrBuilder::getNamed(const std::string &name, Package *package) {
+  auto val = _getNamedNoError(name, package);
+  if (!val) return Error::Create("Can't find id: " + name + " in package " + package->GetNameHash());
+  return *val;
 }
 EValue GoIrBuilder::createBinOperation(GoIrBuilder::BinaryOperation op, EValue left, EValue right) {
   auto L = toRHS(left);
@@ -693,7 +671,7 @@ EValue GoIrBuilder::createBinOperation(GoIrBuilder::BinaryOperation op, EValue l
     return Error::Create("This operation is not supported: ");
   }
 
-  auto retType = IsRetBool ? TypeWrapper::GetInt(*context.TheContext, false, 1) : type;
+  auto retType = IsRetBool ? TypeWrapper::GetInt(false, 1) : type;
   return ValueWrapper::Create(true, retType, res);
 }
 EValue GoIrBuilder::createIf(EValue condition, std::function<void()> ifBuilder, std::function<void()> elseBuilder) {
@@ -743,7 +721,7 @@ const Context &GoIrBuilder::GetContext() const {
 }
 
 EValue GoIrBuilder::_createAndOr(bool isAnd, EValue left, std::function<EValue()> rightBuilder) {
-  auto boolType = TypeWrapper::GetInt(*context.TheContext, false, 1);
+  auto boolType = TypeWrapper::GetInt(false, 1);
 
   left = toRHS(left);
   EValue right;
@@ -827,6 +805,38 @@ EValue GoIrBuilder::createContinue() {
   if (!brPos) return Error::Create("Can't continue");
   context.Builder->CreateBr(brPos);
   return {};
+}
+void GoIrBuilder::setPackageDetails(Package package, std::map<std::string, Package> packages) {
+  context.currentPackage = package;
+  context.packages = packages;
+}
+EValue GoIrBuilder::importPackage(std::string packageName, std::string alias) {
+  auto package = context.packages.find(packageName);
+  if (package == context.packages.end()) {
+    return Error::Create("Not found package " + packageName);
+  }
+
+  if (alias.empty()) {
+    auto pos = packageName.rfind('/');
+    if (pos == std::string::npos) {
+      alias = packageName;
+    } else{
+      alias = packageName.substr(pos);
+    }
+  }
+
+  context.importedPackages.insert({alias, &package->second});
+
+  for (auto &fun : package->second.GetFunctions()) {
+    auto f = llvm::Function::Create((llvm::FunctionType *) fun.second.type.getType(),
+                                    llvm::Function::ExternalLinkage,
+                                    fun.second.LinkName,
+                                    *context.TheModule);
+
+    fun.second.Function = f;
+  }
+
+  return &package->second;
 }
 
 

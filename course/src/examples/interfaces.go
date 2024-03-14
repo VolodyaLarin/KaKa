@@ -33,7 +33,7 @@ func (c circle) perim() float64 {
 	return 2 * 3.14 * c.radius
 }
 func measure(g geometry) {
-	printf("Площадь: %g см^2, периметр: %g см\n", g.area(), g.perim())
+	fmt.Printf("Площадь: %g см^2, периметр: %g см\n", g.area(), g.perim())
 }
 
 func main() int {

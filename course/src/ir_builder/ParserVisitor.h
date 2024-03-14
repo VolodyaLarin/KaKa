@@ -10,9 +10,7 @@
 
 class ParserVisitor : public GoParserBaseVisitor {
  public:
-  [[nodiscard]] const std::shared_ptr<GoIrBuilder> &GetGoIrBuilder() const;
-  explicit ParserVisitor();
-
+  explicit ParserVisitor(const std::shared_ptr<GoIrBuilder> &go_ir_builder);
   antlrcpp::Any visitSourceFile(GoParser::SourceFileContext *ctx) override;
   antlrcpp::Any visitImportDecl(GoParser::ImportDeclContext *ctx) override;
   antlrcpp::Any visitTypeDecl(GoParser::TypeDeclContext *ctx) override;
@@ -36,6 +34,7 @@ class ParserVisitor : public GoParserBaseVisitor {
   antlrcpp::Any visitIncDecStmt(GoParser::IncDecStmtContext *ctx) override;
   antlrcpp::Any visitBreakStmt(GoParser::BreakStmtContext *ctx) override;
   antlrcpp::Any visitContinueStmt(GoParser::ContinueStmtContext *ctx) override;
+  antlrcpp::Any visitType_(GoParser::Type_Context *ctx) override;
  private:
   std::shared_ptr<GoIrBuilder> goIrBuilder;
 

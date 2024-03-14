@@ -11,6 +11,7 @@
 #include "ValueWrapper.h"
 #include "FunctionWrapper.h"
 #include "codegen/GoParser.h"
+#include "Package.h"
 
 class StackController {
  private:
@@ -48,17 +49,16 @@ class Context {
 
   StackController stackController;
 
-  std::string ModuleName;
-
-  std::map<std::string, FunctionWrapper> Functions;
-  std::map<std::string, TypeWrapper> Types;
+  Package currentPackage;
+  std::map<std::string, Package> packages;
+  std::map<std::string, Package*> importedPackages;
 
   [[nodiscard]] std::string GetMethodId(const std::string &name, const std::string &struct_name) const;
 
   [[nodiscard]] std::string GetFunctionID(const std::string &name) const;
 
   Context();
-
+ private:
   std::optional<TypeWrapper> GetType(GoParser::Type_Context *typeContext);
 };
 
