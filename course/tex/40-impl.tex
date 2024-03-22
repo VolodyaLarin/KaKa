@@ -1,0 +1,265 @@
+\chapter{Технологический раздел}
+\label{cha:impl}
+
+\section{Выбор средств реализации}
+
+В ходе разработки было решено использовать язык программирования C++, так как он предоставляет широкие возможности для реализации приложений.
+Язык программирования C++ широко поддерживается компилятором LLVM, что обеспечивает высокую производительность и эффективность разработки.
+Кроме того, ANTLR4, используемый для генерации кода лексера и парсера, также порождает исходный код на C++, что позволяет легко интегрировать сгенерированный код.
+Также код на C++ легко линкуется с компилируемыми бекендом LLVM программами, благодаря поддержке соглашения вызовов cdecl, что облегчает процесс разработки и интеграции.
+Для обеспечения удобного импорта и экспорта данных о структуре пакетов была выбрана библиотека Boost, обладающая нужными инструментами для работы с данными.
+Для написания кода были использованы интегрированные среды разработки JetBrains CLion и GoLand.
+
+\section{Структура проекта}
+
+
+
+На рисунке~\ref{fig:code-usage} представлен граф включаемых заголовочных файлов для main.cpp.
+
+\begin{figure}[h]
+    \centering
+
+    \includesvg[width=\textwidth]{plantuml/export/code-usage}
+
+    \caption{Граф включаемых заголовочных файлов для main.cpp}
+    \label{fig:code-usage}
+\end{figure}
+
+
+\section{Тестирования компилятора}
+
+\subsection*{Тестирование генерации кода}
+
+Для проверки функциональности компилятора были созданы программы, которые соответствуют измененной грамматике языка.
+Они предназначены для проверки правильности работы различных конструкций языка.
+Данные программы охватывают следующие сценарии:
+\begin{itemize}
+	\item создание переменных и констант;
+	\item ввод и вывод;
+	\item работа с целыми и вещественными числами;
+	\item работа с константными строками;
+	\item создание функций и работа с рекурсией;
+	\item создание ветвлений программы;
+	\item создание циклов, выход из цикла и пропуск итерации цикла;
+	\item работа с массивами фиксированного размера;
+	\item работа со структурами, создание методов структур;
+	\item создание интерфейсов;
+	\item работа с указателями;
+	\item логические операции, ленивые логические вычисления;
+	\item преобразование типов.
+\end{itemize}
+
+
+В листинге~\ref{lst:prog_example_interfaces} представлен пример работы с интерфейсами.
+
+\begin{lstlisting}[label=lst:prog_example_interfaces,language=go,basicstyle=\scriptsize,numberstyle=\tiny,caption={Пример программы использования интерфейсов}]
+package main
+import "fmt"
+type geometry interface {
+	area() float64
+	perim() float64
+}
+type rect struct {
+	width  float64
+	height float64
+}
+type circle struct {
+	radius float64
+}
+func (r rect) area() float64 {
+	return r.width * r.height
+}
+func (r rect) perim() float64 {
+	return 2*r.width + 2*r.height
+}
+func (c circle) area() float64 {
+	return 3.14 * c.radius * c.radius
+}
+func (c circle) perim() float64 {
+	return 2 * 3.14 * c.radius
+}
+func measure(g geometry) {
+	fmt.Printf("Area: %g cm^2, perim: %g cm\n", g.area(), g.perim())
+}
+func main() {
+	var r rect
+	r.width = float64(3)
+	r.height = float64(4)
+	var c circle
+	c.radius = float64(5)
+	var g1 geometry = r
+	measure(g1)
+	var g2 geometry = c
+	measure(g2)
+}
+\end{lstlisting}
+
+Компилятор справился со всеми описанными задачи.
+Различием в работе от оригинального компилятора заключалась в форматировании булевых значений.
+Это связано с тем, что в оригинальном языке используется другая стандартная библиотека.
+
+\subsection*{Тестирование работы с памятью}
+
+Для тестирования сборщика мусора был использован инструмент Valgrind с использованием предыдущих программ.
+
+Рассмотрим следующий пример, представленный на листинге~\ref{lst:prog_example_gc}.
+В программе создается связанный список из 1000 узлов.
+Каждый узел занимает примерно 390 КиБ.
+Затем голова списка обнуляется, чтобы ссылки на все узлы стали недоступными для дальнейшего использования.
+Затем создается связанный список из 200 узлов.
+Данные операции были повторены 10 раз.
+Результат работы сборщика мусора можно оценить, наблюдая изменения в использовании памяти программой.
+
+\begin{lstlisting}[label=lst:prog_example_gc,language=go,basicstyle=\scriptsize,numberstyle=\tiny,caption={Программа для тестирования сборщика мусора}]
+package main
+type Node struct {
+	data     [100000]int
+	nextNode *Node
+}
+func newNode(next *Node) *Node {
+	var node Node
+	node.nextNode = next
+	return &node
+}
+func main() {
+	var head *Node = nil
+	for i := 0; i < 10; i++ {
+		for i := 0; i < 1000; i++ {
+			head = newNode(head)
+		}
+		head = nil
+		for i := 0; i < 200; i++ {
+			head = newNode(head)
+		}
+		head = nil
+	}
+}
+\end{lstlisting}
+
+Инструмент Valgrind не выявил ошибок в использовании памяти.
+Также был получен график использования памяти, представленный на рисунке~\ref{fig:valgrind-massif}.
+Из данной зависимости видно, что сборщик мусора высвобождал неиспользуемые узлы.
+Следовательно, сборщик мусора работает корректно.
+
+\begin{figure}[h]
+	\centering
+
+	\includesvg[width=\textwidth]{plantuml/export/valgrind_massif}
+
+	\caption{Зависимость используемой памяти от времени для программы, представленной на листинге~\ref{lst:prog_example_gc}}
+	\label{fig:valgrind-massif}
+\end{figure}
+
+
+%В данном разделе описано изготовление и требование всячины. Кстати,
+%в Latex нужно эскейпить подчёркивание (писать <<\verb|some\_function|>> для \Code{some\_function}).
+%
+%\ifPDFTeX
+%Для вставки кода есть пакет \Code{listings}. К сожалению, пакет \Code{listings} всё ещё
+%работает криво при появлении в листинге русских букв и кодировке исходников utf-8.
+%В данном примере он (увы) на лету конвертируется в koi-8 в ходе сборки pdf.
+%
+%Есть альтернатива \Code{listingsutf8}, однако она работает лишь с
+%\Code{\textbackslash{}lstinputlisting}, но не с окружением \Code{\textbackslash{}lstlisting}
+%
+%Вот так можно вставлять псевдокод (питоноподобный язык определен в \Code{listings.inc.tex}):
+%
+%\begin{lstlisting}[style=pseudocode,caption={Алгоритм оценки дипломных работ}]
+%def EvaluateDiplomas():
+%    for each student in Masters:
+%        student.Mark := 5
+%    for each student in Engineers:
+%        if Good(student):
+%            student.Mark := 5
+%        else:
+%            student.Mark := 4
+%\end{lstlisting}
+%
+%Еще в шаблоне определен псевдоязык для BNF:
+%
+%\begin{lstlisting}[style=grammar,basicstyle=\small,caption={Грамматика}]
+%  ifstmt -> "if" "(" expression ")" stmt |
+%            "if" "(" expression ")" stmt1 "else" stmt2
+%  number -> digit digit*
+%\end{lstlisting}
+%
+%В листинге~\ref{lst:sample01} работают русские буквы. Сильная магия. Однако, работает
+%только во включаемых файлах, прямо в \TeX{} нельзя.
+%
+%% Обратите внимание, что включается не ../src/..., а inc/src/...
+%% В Makefile есть соответствующее правило для inc/src/*,
+%% которое копирует исходные файлы из ../src и конвертирует из UTF-8 в KOI8-R.
+%% Кстати, поэтому использовать можно только русские буквы и ASCII,
+%% весь остальной UTF-8 вроде CJK и египетских иероглифов -- нельзя.
+%
+%\lstinputlisting[language=C,caption=Пример (\Code{test.c}),label=lst:sample01]{inc/src/test.c}
+%
+%\else
+%
+%Для вставки кода есть пакет \texttt{minted}. Он хорош всем кроме: необходимости Python (есть во всех нормальных (нет, Windows, я не про тебя) ОС) и Pygments и того, что нормально работает лишь в \XeLaTeX.
+%
+%\ifdefined\NoMinted
+%Но к сожалению, у вас, по-видимому, не установлен Python или pygmentize.
+%\else
+%Можно пользоваться расширенным BFN:
+%
+%\begin{listing}[H]
+%\begin{ebnfcode}
+% letter = "A" | "B" | "C" | "D" | "E" | "F" | "G"
+%       | "H" | "I" | "J" | "K" | "L" | "M" | "N"
+%       | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
+%       | "V" | "W" | "X" | "Y" | "Z" ;
+%digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+%symbol = "[" | "]" | "{" | "}" | "(" | ")" | "<" | ">"
+%       | "'" | '"' | "=" | "|" | "." | "," | ";" ;
+%character = letter | digit | symbol | "_" ;
+%
+%identifier = letter , { letter | digit | "_" } ;
+%terminal = "'" , character , { character } , "'"
+%         | '"' , character , { character } , '"' ;
+%
+%lhs = identifier ;
+%rhs = identifier
+%     | terminal
+%     | "[" , rhs , "]"
+%     | "{" , rhs , "}"
+%     | "(" , rhs , ")"
+%     | rhs , "|" , rhs
+%     | rhs , "," , rhs ;
+%
+%rule = lhs , "=" , rhs , ";" ;
+%grammar = { rule } ;
+%\end{ebnfcode}
+%\caption{EBNF определённый через EBNF}
+%\label{lst:ebnf}
+%\end{listing}
+%
+%А вот в листинге \ref{lst:c} на языке C работают русские комменты. Спасибо Pygments и Minted за это.
+%
+%\begin{listing}[H]
+%\cfile{inc/src/test.c}
+%\caption{Пример — test.c}
+%\end{listing}
+%\label{lst:c}
+%
+%\fi
+%\fi
+%% Для вставки реального кода лучше использовать \texttt{\textbackslash lstinputlisting} (который понимает
+%% UTF8) и стили \Code{realcode} либо \Code{simplecode} (в зависимости от размера куска).
+%
+%
+%
+%
+%Можно также использовать окружение \Code{verbatim}, если \Code{listings} чем-то не
+%устраивает. Только следует помнить, что табы в нём <<съедаются>>. Существует так же команда \Code{\textbackslash{}verbatiminput} для вставки файла.
+%
+%\begin{verbatim}
+%a_b = a + b; // русский комментарий
+%if (a_b > 0)
+%    a_b = 0;
+%\end{verbatim}
+%
+%%%% Local Variables:
+%%%% mode: latex
+%%%% TeX-master: "rpz"
+%%%% End:

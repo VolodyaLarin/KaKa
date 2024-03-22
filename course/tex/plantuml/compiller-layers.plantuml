@@ -1,0 +1,48 @@
+@startuml
+
+
+'skinparam linetype ortho
+
+component Frontend
+component "Middle-End" as Middleend
+component Backend
+
+
+
+skinparam interface {
+  backgroundColor transparent
+  borderColor transparent
+}
+skinparam component {
+'  backgroundColor transparent
+  borderColor black
+'  FontName Times
+}
+
+skinparam sequenceMessageAlign center
+
+circle " " as a
+circle " " as b
+
+
+
+
+a -right-> Frontend : Исходный\nкод
+circle " " as c
+c -up-> Frontend: Синтаксический \nи лексический\nанализаторы
+circle " " as g
+g -down-> Frontend: Грамматика\nЯП
+Frontend -right-> Middleend : Промежуточное\nпредставление
+
+circle " " as d
+d -up-> Middleend: Оптимизация
+Middleend -right-> Backend : Промежуточное\nпредставление
+
+circle " " as e
+e -up-> Backend: Генератор\nисполняемого\nкода
+
+circle " " as f
+f -down-> Backend: Целевая\n платформа
+Backend -right-> b : Исполняемый\nфайл
+
+@enduml

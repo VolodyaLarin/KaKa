@@ -1,0 +1,50 @@
+@startuml
+skinparam linetype ortho
+hide class circle
+
+left to right direction
+
+class LlvmBuilder <<Библиотечный строитель LLVM IR>> {}
+class GoIrBuilder <<Строитель IR для Golang>> {
+  - LlvmBuilder _llvmBuilder
+  + importPackage() : импорт пакета
+  + createFunction() : создание функции
+  + createIntConstant() : создание целочисленной константы
+  + createBoolConstant() : создание булевой константы
+  + createFloatConstant() : создание вещественной константы
+  + createNil()  : создание nil
+  + createStringConstant() : создание строковой константы
+  + addNamedValue() : добавление именованной переменной
+  + createReturn() : создание возврата из функции
+  + allocateMemory() : выделение памяти
+  + assign() : присваивание значения
+  + cast() : преобразование типа
+  + createCall() : создание вызова функции
+  + getByIndex() : получение элемента по индексу
+  + getStructField() : получение поля структуры
+  + deref() : разыменование
+  + getNamed() : получение переменной/типа/константы по имени
+  + createBinOperation() : создание бинарной математической операции
+  + createIf() : создание условия
+  + createFor(): создание цикла
+  + createAnd() : создание логического <<и>>
+  + createOr() : создание логического <<или>>
+  + createBreak() : создание выхода из цикла
+  + createContinue() : создание пропуск итерации цикла
+  + createTypeDecl() : создание объявления типа
+  + createConstDecl() : создание объявления константы
+}
+
+class BaseVisitor <<Базовый посититель>> {}
+class GoIrVisitor <<Посетитель>>  {}
+
+class AST <<Дерево разбора>> {}
+
+GoIrVisitor -|> BaseVisitor
+
+GoIrVisitor --> GoIrBuilder
+GoIrVisitor -left-> AST
+
+GoIrBuilder *-up- LlvmBuilder
+
+@enduml

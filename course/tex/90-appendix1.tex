@@ -1,0 +1,184 @@
+%\begin{landscape}
+
+    \chapter{Представление стандартной библиотеки}
+    \label{cha:appendix_builtin}
+
+
+    \begin{figure}[h]
+        \centering
+
+        \includesvg[width=\textwidth]{plantuml/export/builtin-lib}
+
+        \caption{Представление стандартной библиотеки}
+    \end{figure}
+
+%\end{landscape}
+
+
+\chapter{Грамматика языка программирования Golang}
+\label{cha:appendix1}
+
+\begin{lstlisting}[basicstyle=\scriptsize,caption={Описание лексического анализатора}]
+lexer grammar GoLexer;
+BREAK : 'break' -> mode(NLSEMI);
+FUNC : 'func';
+INTERFACE : 'interface';
+STRUCT : 'struct';
+ELSE : 'else';
+PACKAGE : 'package';
+CONST : 'const';
+IF : 'if';
+RANGE : 'range';
+TYPE : 'type';
+CONTINUE : 'continue' -> mode(NLSEMI);
+FOR : 'for';
+IMPORT : 'import';
+RETURN : 'return' -> mode(NLSEMI);
+VAR : 'var';
+NIL_LIT: 'nil' -> mode(NLSEMI);
+IDENTIFIER: LETTER (LETTER | UNICODE_DIGIT)* -> mode(NLSEMI);
+L_PAREN : '(';
+R_PAREN : ')' -> mode(NLSEMI);
+L_CURLY : '{';
+R_CURLY : '}' -> mode(NLSEMI);
+L_BRACKET : '[';
+R_BRACKET : ']' -> mode(NLSEMI);
+ASSIGN : '=';
+COMMA : ',';
+SEMI : ';';
+COLON : ':';
+DOT : '.';
+PLUS_PLUS : '++' -> mode(NLSEMI);
+MINUS_MINUS : '--' -> mode(NLSEMI);
+DECLARE_ASSIGN : ':=';
+ELLIPSIS : '...';
+LOGICAL_OR : '||';
+LOGICAL_AND : '&&';
+EQUALS : '==';
+NOT_EQUALS : '!=';
+LESS : '<';
+LESS_OR_EQUALS : '<=';
+GREATER : '>';
+GREATER_OR_EQUALS : '>=';
+EXCLAMATION: '!';
+PLUS : '+';
+MINUS : '-';
+STAR : '*';
+AMPERSAND : '&';
+DECIMAL_LIT : ('0' | [1-9] ('_'? [0-9])*) -> mode(NLSEMI);
+FLOAT_LIT: (DECIMAL_FLOAT_LIT ) -> mode(NLSEMI);
+DECIMAL_FLOAT_LIT: DECIMALS ('.' DECIMALS? EXPONENT? | EXPONENT) | '.' DECIMALS EXPONENT?;
+fragment RUNE: '\'' (UNICODE_VALUE) '\'';
+RUNE_LIT: RUNE -> mode(NLSEMI);
+INTERPRETED_STRING_LIT : '"' (~["\\] | ESCAPED_VALUE)* '"' -> mode(NLSEMI);
+WS : [ \t]+ -> channel(HIDDEN);
+COMMENT : '/*' .*? '*/' -> channel(HIDDEN);
+TERMINATOR : [\r\n]+ -> channel(HIDDEN);
+LINE_COMMENT : '//' ~[\r\n]* -> channel(HIDDEN);
+fragment UNICODE_VALUE: ~[\r\n'] | LITTLE_U_VALUE | BIG_U_VALUE ;
+fragment DECIMALS: [0-9] ('_'? [0-9])*;
+fragment EXPONENT: [eE] [+-]? DECIMALS;
+fragment LETTER: UNICODE_LETTER | '_';
+fragment UNICODE_DIGIT: [\p{Nd}];
+fragment UNICODE_LETTER: [\p{L}];
+mode NLSEMI;
+WS_NLSEMI: [ \t]+ -> channel(HIDDEN);
+COMMENT_NLSEMI : '/*' ~[\r\n]*? '*/' -> channel(HIDDEN);
+LINE_COMMENT_NLSEMI : '//' ~[\r\n]* -> channel(HIDDEN);
+EOS: ([\r\n]+ | ';' | '/*' .*? '*/' | EOF) -> mode(DEFAULT_MODE);
+OTHER: -> mode(DEFAULT_MODE), channel(HIDDEN);
+\end{lstlisting}
+
+
+\begin{lstlisting}[basicstyle=\scriptsize,caption={Описание синтаксического анализатора}]
+parser grammar GoParser;
+options {
+tokenVocab = GoLexer;
+superClass = GoParserBase;
+}
+sourceFile : packageClause eos (importDecl eos)* ((functionDecl | methodDecl | declaration) eos)* EOF ;
+packageClause : PACKAGE packageName = IDENTIFIER ;
+importDecl : IMPORT (importSpec | L_PAREN (importSpec eos)* R_PAREN) ;
+importSpec : alias = (DOT | IDENTIFIER)? importPath ;
+importPath : string_ ;
+declaration : constDecl | typeDecl | varDecl ;
+constDecl : CONST (constSpec | L_PAREN (constSpec eos)* R_PAREN) ;
+constSpec : identifierList (type_? ASSIGN expressionList)? ;
+identifierList : IDENTIFIER (COMMA IDENTIFIER)* ;
+expressionList : expression (COMMA expression)* ;
+typeDecl : TYPE (typeSpec | L_PAREN (typeSpec eos)* R_PAREN) ;
+typeSpec : aliasDecl | typeDef ;
+aliasDecl : IDENTIFIER ASSIGN type_ ;
+typeDef : IDENTIFIER typeParameters? type_ ;
+typeParameters : L_BRACKET typeParameterDecl (COMMA typeParameterDecl)* R_BRACKET ;
+typeParameterDecl : identifierList typeElement ;
+typeElement : typeTerm (OR typeTerm)* ;
+typeTerm : UNDERLYING? type_ ;
+functionDecl : FUNC IDENTIFIER typeParameters? signature block? ;
+methodDecl : FUNC receiver IDENTIFIER signature block? ;
+receiver : parameters ;
+varDecl : VAR (varSpec | L_PAREN (varSpec eos)* R_PAREN) ;
+varSpec : identifierList (type_ (ASSIGN expressionList)? | ASSIGN expressionList) ;
+block : L_CURLY statementList? R_CURLY ;
+statementList : ((SEMI? | EOS? | {this->closingBracket()}?) statement eos)+ ;
+statement : declaration | simpleStmt | returnStmt | breakStmt | continueStmt | block | ifStmt | forStmt ;
+simpleStmt : incDecStmt | assignment | expressionStmt | shortVarDecl ;
+expressionStmt : expression ;
+incDecStmt : expression (PLUS_PLUS | MINUS_MINUS) ;
+assignment : expressionList assign_op expressionList ;
+assign_op : (PLUS | MINUS | OR | CARET | STAR | DIV | MOD | AMPERSAND )? ASSIGN ;
+shortVarDecl : identifierList DECLARE_ASSIGN expressionList ;
+returnStmt : RETURN expressionList? ;
+breakStmt : BREAK IDENTIFIER? ;
+continueStmt : CONTINUE IDENTIFIER? ;
+ifStmt : IF (expression | eos expression | simpleStmt eos expression) block (ELSE (ifStmt | block))? ;
+typeList : (type_ | NIL_LIT) (COMMA (type_ | NIL_LIT))* ;
+forStmt : FOR (expression? | forClause | rangeClause?) block ;
+forClause : initStmt = simpleStmt? eos expression? eos postStmt = simpleStmt? ;
+rangeClause : (expressionList ASSIGN | identifierList DECLARE_ASSIGN)? RANGE expression ;
+type_ : typeName typeArgs? | typeLit | L_PAREN type_ R_PAREN ;
+typeArgs : L_BRACKET typeList COMMA? R_BRACKET ;
+typeName : qualifiedIdent | IDENTIFIER ;
+typeLit : arrayType | structType | pointerType | functionType | interfaceType ;
+arrayType : L_BRACKET arrayLength R_BRACKET elementType ;
+arrayLength : expression ;
+elementType : type_ ;
+pointerType : STAR type_ ;
+interfaceType : INTERFACE L_CURLY ((methodSpec | typeElement) eos)* R_CURLY ;
+methodSpec : IDENTIFIER parameters result | IDENTIFIER parameters ;
+functionType : FUNC signature ;
+signature : parameters result? ;
+result : parameters | type_ ;
+parameters : L_PAREN (parameterDecl (COMMA parameterDecl)* COMMA?)? R_PAREN ;
+parameterDecl : identifierList? ELLIPSIS? type_ ;
+expression : primaryExpr | unary_op = (PLUS | MINUS | EXCLAMATION | CARET | STAR | AMPERSAND | RECEIVE) expression | expression mul_op = (STAR | DIV | MOD | LSHIFT | RSHIFT | AMPERSAND | BIT_CLEAR) expression | expression add_op = (PLUS | MINUS | OR | CARET) expression | expression rel_op = (
+EQUALS | NOT_EQUALS | LESS | LESS_OR_EQUALS | GREATER | GREATER_OR_EQUALS
+) expression | expression LOGICAL_AND expression | expression LOGICAL_OR expression ;
+primaryExpr : operand | conversion | methodExpr | primaryExpr ( DOT IDENTIFIER | index | slice_ | typeAssertion | arguments) ;
+conversion : type_ L_PAREN expression COMMA? R_PAREN ;
+operand : literal | operandName // typeArgs? | L_PAREN expression R_PAREN ;
+literal : basicLit | functionLit ;
+basicLit : NIL_LIT | integer | string_ | FLOAT_LIT ;
+integer : DECIMAL_LIT | RUNE_LIT ;
+operandName : IDENTIFIER ;
+qualifiedIdent : IDENTIFIER DOT IDENTIFIER ;
+structType : STRUCT L_CURLY (fieldDecl eos)* R_CURLY ;
+fieldDecl : (identifierList type_ | embeddedField) tag = string_? ;
+string_ : RAW_STRING_LIT | INTERPRETED_STRING_LIT ;
+embeddedField : STAR? typeName typeArgs? ;
+functionLit : FUNC signature block ; // function
+index : L_BRACKET expression R_BRACKET ;
+slice_ : L_BRACKET (expression? COLON expression? | expression? COLON expression COLON expression) R_BRACKET ;
+typeAssertion : DOT L_PAREN type_ R_PAREN ;
+arguments : L_PAREN ((expressionList | type_ (COMMA expressionList)?) ELLIPSIS? COMMA?)? R_PAREN ;
+methodExpr : type_ DOT IDENTIFIER ;
+\end{lstlisting}
+%\blindtext
+%\begin{figure}
+%\centering
+%\caption{Картинка в приложении. Страшная и ужасная.}
+%\end{figure}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "rpz"
+%%% End: 

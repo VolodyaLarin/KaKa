@@ -1,0 +1,10 @@
+*.aux
+*.bbl
+*.log
+*.nlo
+*.out
+*.pytxcode
+*.toc
+*.blg
+svg-inkscape
+.idea

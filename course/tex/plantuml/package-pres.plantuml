@@ -1,0 +1,87 @@
+@startuml
+
+'!theme plain
+
+skinparam groupInheritance 3
+
+left to right direction
+skinparam linetype ortho
+hide class circle
+
+
+class Package {
+    name: string
+    hashName: string
+    types: map<string, Type>
+    functions: map<string, Function>
+    constants: map<string, Type>
+}
+
+class Type {
+    typeName: string
+}
+
+class Function {
+    linkName: string
+    type: FunctionType
+}
+
+package "Конечные типы данных" as R {
+
+class PointerType {
+    type: Type
+}
+
+
+class ArrayType {
+    type: Type
+}
+
+class StructType {
+    isInterface: bool
+    fieldsTypes: Type[]
+    fieldsName: string[]
+}
+
+
+class IntegerType {
+    isSigned: bool
+    size: int
+}
+
+class FloatType {
+    size: int
+}
+
+class FunctionType {
+    isVararg: bool
+    args: Type[]
+    retType: Type
+}
+
+}
+
+Package *- Type
+Package *- Function
+
+
+IntegerType --|> Type
+StructType --|> Type
+FunctionType --|> Type
+FloatType --|> Type
+ArrayType --|> Type
+PointerType --|> Type
+
+
+Function *-- FunctionType
+
+Type --o FunctionType
+Type --* PointerType
+Type --o ArrayType
+Type --o StructType
+
+
+'R -right- Type
+
+
+@enduml

@@ -1,0 +1,38 @@
+@startuml
+
+
+skinparam linetype ortho
+
+skinparam interface {
+  backgroundColor transparent
+  borderColor transparent
+}
+skinparam component {
+'  backgroundColor transparent
+'  borderColor black
+'  FontName Times
+}
+
+
+
+
+component "Компилятор Golang" as Comp
+
+
+circle " " as a
+circle " " as b
+circle " " as c
+circle " " as d
+circle " " as e
+circle " " as f
+
+
+a -right-> Comp: Путь до\n пакета
+Comp -right-> b : Исполняемый\nфайл
+
+c -up-> Comp : Antlr4
+d -up-> Comp : LLVM
+e -down-> Comp : Архитектура\n x64 \n
+f -down-> Comp : Спецификация\n Golang \n
+
+@enduml
