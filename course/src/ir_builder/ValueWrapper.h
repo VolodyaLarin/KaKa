@@ -56,10 +56,10 @@ class EValue {
 
   explicit operator bool() const;
 
-  const std::shared_ptr<TypeWrapper> &GetTypePtr() const;
+  [[nodiscard]] const std::shared_ptr<TypeWrapper> &GetTypePtr() const;
   [[nodiscard]] const ValueWrapper::ptr &GetValuePtr() const;
   [[nodiscard]] Error getError() const;
-  Package *GetPackagePtr() const;
+  [[nodiscard]] Package *GetPackagePtr() const;
 
   [[nodiscard]] bool hasError() const;
 

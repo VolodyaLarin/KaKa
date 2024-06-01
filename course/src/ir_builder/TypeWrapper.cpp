@@ -126,7 +126,7 @@ TypeWrapper TypeWrapper::GetPointer(std::optional<TypeWrapper> ty) {
     tyPtr = std::make_shared<TypeWrapper>(*ty);
   }
 
-  auto tw = TypeWrapper(llvm::Type::getInt8PtrTy(*context));
+  auto tw = TypeWrapper(llvm::Type::getInt8Ty(*context)->getPointerTo());
   tw._typeDetails.pointerInfo = {tyPtr};
 
   return tw;

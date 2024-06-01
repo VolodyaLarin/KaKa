@@ -92,7 +92,7 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
   bool recVPtr = false;
 
   if (receiver) {
-    EValue recvTyEV = receiver->parameters()->parameterDecl(0)->type_()->accept(visitor);
+    EValue recvTyEV = std::any_cast<EValue>(receiver->parameters()->parameterDecl(0)->type_()->accept(visitor));
     if (!recvTyEV.GetTypePtr()) {
       return Error::Create("Error: can't create method of undeclared struct", signature);
     }
@@ -113,7 +113,7 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
   }
 
   for (auto arg : signature->parameters()->parameterDecl()) {
-    EValue type = arg->type_()->accept(visitor);
+    EValue type = std::any_cast<EValue>(arg->type_()->accept(visitor));
     if (!type.GetTypePtr()) {
       return Error::Create("Can't find type", arg);
     }
@@ -127,7 +127,7 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
     if (!goType) {
       return Error::Create("Error: Not supported multiple return", signature->result());
     }
-    EValue type = goType->accept(visitor);
+    EValue type = std::any_cast<EValue>(goType->accept(visitor));
     if (!type.GetTypePtr()) {
       return Error::Create("Can't find type", signature->result());
     }
@@ -175,7 +175,7 @@ EValue GoIrBuilder::createFunction(antlr4::tree::ParseTree *ctx,
   }
 
   for (auto arg : signature->parameters()->parameterDecl()) {
-    EValue tyE = arg->type_()->accept(visitor);
+    EValue tyE = std::any_cast<EValue>(arg->type_()->accept(visitor));
     if (!tyE.GetTypePtr()) {
       return tyE;
     }

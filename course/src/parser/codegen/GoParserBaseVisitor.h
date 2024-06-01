@@ -1,6 +1,6 @@
 #include "GoParserBase.h"
 
-// Generated from GoParser.g4 by ANTLR 4.9
+// Generated from GoParser.g4 by ANTLR 4.10
 
 #pragma once
 
@@ -16,415 +16,415 @@
 class  GoParserBaseVisitor : public GoParserVisitor {
 public:
 
-  virtual antlrcpp::Any visitSourceFile(GoParser::SourceFileContext *ctx) override {
+  virtual std::any visitSourceFile(GoParser::SourceFileContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitPackageClause(GoParser::PackageClauseContext *ctx) override {
+  virtual std::any visitPackageClause(GoParser::PackageClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitImportDecl(GoParser::ImportDeclContext *ctx) override {
+  virtual std::any visitImportDecl(GoParser::ImportDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitImportSpec(GoParser::ImportSpecContext *ctx) override {
+  virtual std::any visitImportSpec(GoParser::ImportSpecContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitImportPath(GoParser::ImportPathContext *ctx) override {
+  virtual std::any visitImportPath(GoParser::ImportPathContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitDeclaration(GoParser::DeclarationContext *ctx) override {
+  virtual std::any visitDeclaration(GoParser::DeclarationContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitConstDecl(GoParser::ConstDeclContext *ctx) override {
+  virtual std::any visitConstDecl(GoParser::ConstDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitConstSpec(GoParser::ConstSpecContext *ctx) override {
+  virtual std::any visitConstSpec(GoParser::ConstSpecContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitIdentifierList(GoParser::IdentifierListContext *ctx) override {
+  virtual std::any visitIdentifierList(GoParser::IdentifierListContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitExpressionList(GoParser::ExpressionListContext *ctx) override {
+  virtual std::any visitExpressionList(GoParser::ExpressionListContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeDecl(GoParser::TypeDeclContext *ctx) override {
+  virtual std::any visitTypeDecl(GoParser::TypeDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeSpec(GoParser::TypeSpecContext *ctx) override {
+  virtual std::any visitTypeSpec(GoParser::TypeSpecContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitAliasDecl(GoParser::AliasDeclContext *ctx) override {
+  virtual std::any visitAliasDecl(GoParser::AliasDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeDef(GoParser::TypeDefContext *ctx) override {
+  virtual std::any visitTypeDef(GoParser::TypeDefContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeParameters(GoParser::TypeParametersContext *ctx) override {
+  virtual std::any visitTypeParameters(GoParser::TypeParametersContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeParameterDecl(GoParser::TypeParameterDeclContext *ctx) override {
+  virtual std::any visitTypeParameterDecl(GoParser::TypeParameterDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeElement(GoParser::TypeElementContext *ctx) override {
+  virtual std::any visitTypeElement(GoParser::TypeElementContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeTerm(GoParser::TypeTermContext *ctx) override {
+  virtual std::any visitTypeTerm(GoParser::TypeTermContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitFunctionDecl(GoParser::FunctionDeclContext *ctx) override {
+  virtual std::any visitFunctionDecl(GoParser::FunctionDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitMethodDecl(GoParser::MethodDeclContext *ctx) override {
+  virtual std::any visitMethodDecl(GoParser::MethodDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitReceiver(GoParser::ReceiverContext *ctx) override {
+  virtual std::any visitReceiver(GoParser::ReceiverContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitVarDecl(GoParser::VarDeclContext *ctx) override {
+  virtual std::any visitVarDecl(GoParser::VarDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitVarSpec(GoParser::VarSpecContext *ctx) override {
+  virtual std::any visitVarSpec(GoParser::VarSpecContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitBlock(GoParser::BlockContext *ctx) override {
+  virtual std::any visitBlock(GoParser::BlockContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitStatementList(GoParser::StatementListContext *ctx) override {
+  virtual std::any visitStatementList(GoParser::StatementListContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitStatement(GoParser::StatementContext *ctx) override {
+  virtual std::any visitStatement(GoParser::StatementContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSimpleStmt(GoParser::SimpleStmtContext *ctx) override {
+  virtual std::any visitSimpleStmt(GoParser::SimpleStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitExpressionStmt(GoParser::ExpressionStmtContext *ctx) override {
+  virtual std::any visitExpressionStmt(GoParser::ExpressionStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSendStmt(GoParser::SendStmtContext *ctx) override {
+  virtual std::any visitSendStmt(GoParser::SendStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitIncDecStmt(GoParser::IncDecStmtContext *ctx) override {
+  virtual std::any visitIncDecStmt(GoParser::IncDecStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitAssignment(GoParser::AssignmentContext *ctx) override {
+  virtual std::any visitAssignment(GoParser::AssignmentContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitAssign_op(GoParser::Assign_opContext *ctx) override {
+  virtual std::any visitAssign_op(GoParser::Assign_opContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitShortVarDecl(GoParser::ShortVarDeclContext *ctx) override {
+  virtual std::any visitShortVarDecl(GoParser::ShortVarDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitLabeledStmt(GoParser::LabeledStmtContext *ctx) override {
+  virtual std::any visitLabeledStmt(GoParser::LabeledStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitReturnStmt(GoParser::ReturnStmtContext *ctx) override {
+  virtual std::any visitReturnStmt(GoParser::ReturnStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitBreakStmt(GoParser::BreakStmtContext *ctx) override {
+  virtual std::any visitBreakStmt(GoParser::BreakStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitContinueStmt(GoParser::ContinueStmtContext *ctx) override {
+  virtual std::any visitContinueStmt(GoParser::ContinueStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitGotoStmt(GoParser::GotoStmtContext *ctx) override {
+  virtual std::any visitGotoStmt(GoParser::GotoStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitFallthroughStmt(GoParser::FallthroughStmtContext *ctx) override {
+  virtual std::any visitFallthroughStmt(GoParser::FallthroughStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitDeferStmt(GoParser::DeferStmtContext *ctx) override {
+  virtual std::any visitDeferStmt(GoParser::DeferStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitIfStmt(GoParser::IfStmtContext *ctx) override {
+  virtual std::any visitIfStmt(GoParser::IfStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSwitchStmt(GoParser::SwitchStmtContext *ctx) override {
+  virtual std::any visitSwitchStmt(GoParser::SwitchStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitExprSwitchStmt(GoParser::ExprSwitchStmtContext *ctx) override {
+  virtual std::any visitExprSwitchStmt(GoParser::ExprSwitchStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitExprCaseClause(GoParser::ExprCaseClauseContext *ctx) override {
+  virtual std::any visitExprCaseClause(GoParser::ExprCaseClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitExprSwitchCase(GoParser::ExprSwitchCaseContext *ctx) override {
+  virtual std::any visitExprSwitchCase(GoParser::ExprSwitchCaseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeSwitchStmt(GoParser::TypeSwitchStmtContext *ctx) override {
+  virtual std::any visitTypeSwitchStmt(GoParser::TypeSwitchStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeSwitchGuard(GoParser::TypeSwitchGuardContext *ctx) override {
+  virtual std::any visitTypeSwitchGuard(GoParser::TypeSwitchGuardContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeCaseClause(GoParser::TypeCaseClauseContext *ctx) override {
+  virtual std::any visitTypeCaseClause(GoParser::TypeCaseClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeSwitchCase(GoParser::TypeSwitchCaseContext *ctx) override {
+  virtual std::any visitTypeSwitchCase(GoParser::TypeSwitchCaseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeList(GoParser::TypeListContext *ctx) override {
+  virtual std::any visitTypeList(GoParser::TypeListContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSelectStmt(GoParser::SelectStmtContext *ctx) override {
+  virtual std::any visitSelectStmt(GoParser::SelectStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitCommClause(GoParser::CommClauseContext *ctx) override {
+  virtual std::any visitCommClause(GoParser::CommClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitCommCase(GoParser::CommCaseContext *ctx) override {
+  virtual std::any visitCommCase(GoParser::CommCaseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitRecvStmt(GoParser::RecvStmtContext *ctx) override {
+  virtual std::any visitRecvStmt(GoParser::RecvStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitForStmt(GoParser::ForStmtContext *ctx) override {
+  virtual std::any visitForStmt(GoParser::ForStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitForClause(GoParser::ForClauseContext *ctx) override {
+  virtual std::any visitForClause(GoParser::ForClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitRangeClause(GoParser::RangeClauseContext *ctx) override {
+  virtual std::any visitRangeClause(GoParser::RangeClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitGoStmt(GoParser::GoStmtContext *ctx) override {
+  virtual std::any visitGoStmt(GoParser::GoStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitType_(GoParser::Type_Context *ctx) override {
+  virtual std::any visitType_(GoParser::Type_Context *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeArgs(GoParser::TypeArgsContext *ctx) override {
+  virtual std::any visitTypeArgs(GoParser::TypeArgsContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeName(GoParser::TypeNameContext *ctx) override {
+  virtual std::any visitTypeName(GoParser::TypeNameContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeLit(GoParser::TypeLitContext *ctx) override {
+  virtual std::any visitTypeLit(GoParser::TypeLitContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitArrayType(GoParser::ArrayTypeContext *ctx) override {
+  virtual std::any visitArrayType(GoParser::ArrayTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitArrayLength(GoParser::ArrayLengthContext *ctx) override {
+  virtual std::any visitArrayLength(GoParser::ArrayLengthContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitElementType(GoParser::ElementTypeContext *ctx) override {
+  virtual std::any visitElementType(GoParser::ElementTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitPointerType(GoParser::PointerTypeContext *ctx) override {
+  virtual std::any visitPointerType(GoParser::PointerTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitInterfaceType(GoParser::InterfaceTypeContext *ctx) override {
+  virtual std::any visitInterfaceType(GoParser::InterfaceTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSliceType(GoParser::SliceTypeContext *ctx) override {
+  virtual std::any visitSliceType(GoParser::SliceTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitMapType(GoParser::MapTypeContext *ctx) override {
+  virtual std::any visitMapType(GoParser::MapTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitChannelType(GoParser::ChannelTypeContext *ctx) override {
+  virtual std::any visitChannelType(GoParser::ChannelTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitMethodSpec(GoParser::MethodSpecContext *ctx) override {
+  virtual std::any visitMethodSpec(GoParser::MethodSpecContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitFunctionType(GoParser::FunctionTypeContext *ctx) override {
+  virtual std::any visitFunctionType(GoParser::FunctionTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSignature(GoParser::SignatureContext *ctx) override {
+  virtual std::any visitSignature(GoParser::SignatureContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitResult(GoParser::ResultContext *ctx) override {
+  virtual std::any visitResult(GoParser::ResultContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitParameters(GoParser::ParametersContext *ctx) override {
+  virtual std::any visitParameters(GoParser::ParametersContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitParameterDecl(GoParser::ParameterDeclContext *ctx) override {
+  virtual std::any visitParameterDecl(GoParser::ParameterDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitExpression(GoParser::ExpressionContext *ctx) override {
+  virtual std::any visitExpression(GoParser::ExpressionContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitPrimaryExpr(GoParser::PrimaryExprContext *ctx) override {
+  virtual std::any visitPrimaryExpr(GoParser::PrimaryExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitConversion(GoParser::ConversionContext *ctx) override {
+  virtual std::any visitConversion(GoParser::ConversionContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitOperand(GoParser::OperandContext *ctx) override {
+  virtual std::any visitOperand(GoParser::OperandContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitLiteral(GoParser::LiteralContext *ctx) override {
+  virtual std::any visitLiteral(GoParser::LiteralContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitBasicLit(GoParser::BasicLitContext *ctx) override {
+  virtual std::any visitBasicLit(GoParser::BasicLitContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitInteger(GoParser::IntegerContext *ctx) override {
+  virtual std::any visitInteger(GoParser::IntegerContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitOperandName(GoParser::OperandNameContext *ctx) override {
+  virtual std::any visitOperandName(GoParser::OperandNameContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitQualifiedIdent(GoParser::QualifiedIdentContext *ctx) override {
+  virtual std::any visitQualifiedIdent(GoParser::QualifiedIdentContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitCompositeLit(GoParser::CompositeLitContext *ctx) override {
+  virtual std::any visitCompositeLit(GoParser::CompositeLitContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitLiteralType(GoParser::LiteralTypeContext *ctx) override {
+  virtual std::any visitLiteralType(GoParser::LiteralTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitLiteralValue(GoParser::LiteralValueContext *ctx) override {
+  virtual std::any visitLiteralValue(GoParser::LiteralValueContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitElementList(GoParser::ElementListContext *ctx) override {
+  virtual std::any visitElementList(GoParser::ElementListContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitKeyedElement(GoParser::KeyedElementContext *ctx) override {
+  virtual std::any visitKeyedElement(GoParser::KeyedElementContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitKey(GoParser::KeyContext *ctx) override {
+  virtual std::any visitKey(GoParser::KeyContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitElement(GoParser::ElementContext *ctx) override {
+  virtual std::any visitElement(GoParser::ElementContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitStructType(GoParser::StructTypeContext *ctx) override {
+  virtual std::any visitStructType(GoParser::StructTypeContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitFieldDecl(GoParser::FieldDeclContext *ctx) override {
+  virtual std::any visitFieldDecl(GoParser::FieldDeclContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitString_(GoParser::String_Context *ctx) override {
+  virtual std::any visitString_(GoParser::String_Context *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitEmbeddedField(GoParser::EmbeddedFieldContext *ctx) override {
+  virtual std::any visitEmbeddedField(GoParser::EmbeddedFieldContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitFunctionLit(GoParser::FunctionLitContext *ctx) override {
+  virtual std::any visitFunctionLit(GoParser::FunctionLitContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitIndex(GoParser::IndexContext *ctx) override {
+  virtual std::any visitIndex(GoParser::IndexContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSlice_(GoParser::Slice_Context *ctx) override {
+  virtual std::any visitSlice_(GoParser::Slice_Context *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTypeAssertion(GoParser::TypeAssertionContext *ctx) override {
+  virtual std::any visitTypeAssertion(GoParser::TypeAssertionContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitArguments(GoParser::ArgumentsContext *ctx) override {
+  virtual std::any visitArguments(GoParser::ArgumentsContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitMethodExpr(GoParser::MethodExprContext *ctx) override {
+  virtual std::any visitMethodExpr(GoParser::MethodExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitEos(GoParser::EosContext *ctx) override {
+  virtual std::any visitEos(GoParser::EosContext *ctx) override {
     return visitChildren(ctx);
   }
 

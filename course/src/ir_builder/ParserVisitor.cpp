@@ -51,7 +51,7 @@ antlrcpp::Any ParserVisitor::visitTypeDecl(GoParser::TypeDeclContext *ctx) {
   auto def = ctx->typeSpec(0)->typeDef();
 
   auto defName = def->IDENTIFIER()->getText();
-  EValue type = def->type_()->accept(this);
+  EValue type = std::any_cast<EValue>(def->type_()->accept(this));
   if (!type.GetTypePtr()) {
     return EValue(Error::Create("Error: Can't declare type " + defName, ctx));
   }
@@ -78,7 +78,7 @@ antlrcpp::Any ParserVisitor::visitType_(GoParser::Type_Context *ctx) {
       std::optional<TypeWrapper> result;
 
       if (method->result()) {
-        EValue resultEV = method->result()->type_()->accept(this);
+        EValue resultEV = std::any_cast<EValue>(method->result()->type_()->accept(this));
         if (!resultEV.GetTypePtr()) {
           return resultEV;
         }
@@ -87,7 +87,7 @@ antlrcpp::Any ParserVisitor::visitType_(GoParser::Type_Context *ctx) {
 
       std::vector<TypeWrapper> params = {TypeWrapper::GetPointer({})};
       for (auto decl : method->parameters()->parameterDecl()) {
-        EValue ty = decl->type_()->accept(this);
+        EValue ty = std::any_cast<EValue>(decl->type_()->accept(this));
         if (!ty.GetTypePtr()) {
           return ty;
         }
@@ -112,7 +112,7 @@ antlrcpp::Any ParserVisitor::visitType_(GoParser::Type_Context *ctx) {
         Error::Create("Warning: multiple field declare is not supported", ctx);
       }
       auto fieldName = field->identifierList()->IDENTIFIER(0)->getText();
-      EValue fieldT = field->type_()->accept(this);
+      EValue fieldT = std::any_cast<EValue>(field->type_()->accept(this));
       if (!fieldT.GetTypePtr()) {
         return fieldT;
       }
@@ -126,7 +126,7 @@ antlrcpp::Any ParserVisitor::visitType_(GoParser::Type_Context *ctx) {
 
   if (ctx->typeLit()->arrayType()) {
     auto child = ctx->typeLit()->arrayType()->elementType()->type_();
-    EValue childType = child->accept(this);
+    EValue childType = std::any_cast<EValue>(child->accept(this));
     if (!childType.GetTypePtr()) {
       return childType;
     }
@@ -140,7 +140,7 @@ antlrcpp::Any ParserVisitor::visitType_(GoParser::Type_Context *ctx) {
     return EValue(childType.GetTypePtr()->getArrayOf(count));
   }
   if (ctx->typeLit()->pointerType()) {
-    EValue pointTo = ctx->typeLit()->pointerType()->type_()->accept(this);
+    EValue pointTo = std::any_cast<EValue>(ctx->typeLit()->pointerType()->type_()->accept(this));
     if (!pointTo.GetTypePtr()) {
       Error::Create("Warning: Declare as void pointer", ctx);
       return EValue(TypeWrapper::GetPointer({}));
@@ -207,14 +207,14 @@ antlrcpp::Any ParserVisitor::visitString_(GoParser::String_Context *ctx) {
 antlrcpp::Any ParserVisitor::visitConstDecl(GoParser::ConstDeclContext *ctx) {
   // @todo support multiple declaration
   // @todo: compute type
-  EValue typeNode = ctx->constSpec()[0]->type_()->accept(this);
+  EValue typeNode = std::any_cast<EValue>(ctx->constSpec()[0]->type_()->accept(this));
   if (!typeNode.GetTypePtr()) {
     return EValue(Error::Create("Can't find type", ctx));
   }
 
   auto llvmType = typeNode.GetTypePtr();
 
-  EValue expr = ctx->constSpec(0)->expressionList()->expression(0)->accept(this);
+  EValue expr = std::any_cast<EValue>(ctx->constSpec(0)->expressionList()->expression(0)->accept(this));
   if (!expr) {
     return expr;
   }
@@ -229,7 +229,7 @@ antlrcpp::Any ParserVisitor::visitReturnStmt(GoParser::ReturnStmtContext *ctx) {
   auto exprs = ctx->expressionList()->expression();
   std::vector<EValue> values;
   std::transform(exprs.cbegin(), exprs.cend(), std::back_inserter(values), [this](auto exprNode) {
-    EValue expr = exprNode->accept(this);
+    auto expr = std::any_cast<EValue>(exprNode->accept(this));
     if (!expr) {
       std::cerr << expr.getError().toString() << std::endl;
       return expr;
@@ -247,7 +247,7 @@ antlrcpp::Any ParserVisitor::visitVarDecl(GoParser::VarDeclContext *ctx) {
     if (varSpec->expressionList()) {
       auto exprList = varSpec->expressionList()->expression();
       std::transform(exprList.begin(), exprList.end(), std::back_inserter(right), [this](auto &expr) {
-        EValue res = expr->accept(this);
+        auto res = std::any_cast<EValue>(expr->accept(this));
         return res.GetValuePtr();
       });
     }
@@ -255,7 +255,7 @@ antlrcpp::Any ParserVisitor::visitVarDecl(GoParser::VarDeclContext *ctx) {
     std::optional<TypeWrapper> typeToCast;
 
     if (varSpec->type_()) {
-      EValue typeV = varSpec->type_()->accept(this);
+      EValue typeV = std::any_cast<EValue>(varSpec->type_()->accept(this));
       if (!typeV.GetTypePtr()) {
         return EValue(Error::Create("Can't find type", ctx));
       }
@@ -291,7 +291,7 @@ antlrcpp::Any ParserVisitor::visitVarDecl(GoParser::VarDeclContext *ctx) {
 
 antlrcpp::Any ParserVisitor::visitPrimaryExpr(GoParser::PrimaryExprContext *ctx) {
   if (ctx->arguments()) {
-    EValue function = ctx->primaryExpr()->accept(this);
+    EValue function = std::any_cast<EValue>(ctx->primaryExpr()->accept(this));
     if (function.GetTypePtr()) {
       auto type2Cast = function.GetTypePtr();
       if (!type2Cast) {
@@ -301,7 +301,7 @@ antlrcpp::Any ParserVisitor::visitPrimaryExpr(GoParser::PrimaryExprContext *ctx)
         return EValue(Error::Create("can't cast more than one value ", ctx));
       }
 
-      EValue right = ctx->arguments()->expressionList()->expression(0)->accept(this);
+      EValue right = std::any_cast<EValue>(ctx->arguments()->expressionList()->expression(0)->accept(this));
       right = goIrBuilder->cast(right, *type2Cast);
       return right;
     }
@@ -311,7 +311,7 @@ antlrcpp::Any ParserVisitor::visitPrimaryExpr(GoParser::PrimaryExprContext *ctx)
     if (ctx->arguments()->expressionList()) {
       auto exprs = ctx->arguments()->expressionList()->expression();
       std::transform(exprs.begin(), exprs.end(), std::back_inserter(ArgsV), [this](auto expr) -> EValue {
-        return expr->accept(this);
+        return std::any_cast<EValue>(expr->accept(this));
       });
     }
 
@@ -319,14 +319,14 @@ antlrcpp::Any ParserVisitor::visitPrimaryExpr(GoParser::PrimaryExprContext *ctx)
   }
 
   if (ctx->index()) {
-    EValue left = ctx->primaryExpr()->accept(this);
-    EValue indexV = ctx->index()->expression()->accept(this);
+    EValue left = std::any_cast<EValue>(ctx->primaryExpr()->accept(this));
+    EValue indexV = std::any_cast<EValue>(ctx->index()->expression()->accept(this));
 
     return goIrBuilder->getByIndex(left, indexV);
   }
 
   if (ctx->DOT()) {
-    EValue left = ctx->primaryExpr()->accept(this);
+    EValue left = std::any_cast<EValue>(ctx->primaryExpr()->accept(this));
     auto fieldName = ctx->IDENTIFIER()->getText();
 
     if (left.GetPackagePtr()) {
@@ -367,8 +367,8 @@ antlrcpp::Any ParserVisitor::visitAssignment(GoParser::AssignmentContext *ctx) {
   }
   for (size_t i = 0; i < ctx->expressionList(0)->expression().size(); i++) {
     if (ctx->expressionList(0)->expression(i)->getText() == "_") continue;
-    EValue lexpr = ctx->expressionList(0)->expression(i)->accept(this);
-    EValue expr = ctx->expressionList(1)->expression(i)->accept(this);
+    EValue lexpr = std::any_cast<EValue>(ctx->expressionList(0)->expression(i)->accept(this));
+    EValue expr = std::any_cast<EValue>(ctx->expressionList(1)->expression(i)->accept(this));
 
     auto res = goIrBuilder->assign(lexpr, expr);
     if (!res) return res;
@@ -377,7 +377,7 @@ antlrcpp::Any ParserVisitor::visitAssignment(GoParser::AssignmentContext *ctx) {
   return EValue();
 }
 antlrcpp::Any ParserVisitor::visitIncDecStmt(GoParser::IncDecStmtContext *ctx) {
-  EValue expr = ctx->expression()->accept(this);
+  EValue expr = std::any_cast<EValue>(ctx->expression()->accept(this));
   EValue oneConst = goIrBuilder->createIntConstant(1);
   auto binOp = GoIrBuilder::BinaryOperation::Add;
   if (ctx->MINUS_MINUS()) {
@@ -389,8 +389,8 @@ antlrcpp::Any ParserVisitor::visitIncDecStmt(GoParser::IncDecStmtContext *ctx) {
 }
 antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
   if (ctx->add_op || ctx->rel_op || ctx->mul_op) {
-    EValue L = ctx->expression(0)->accept(this);
-    EValue R = ctx->expression(1)->accept(this);
+    EValue L = std::any_cast<EValue>(ctx->expression(0)->accept(this));
+    EValue R = std::any_cast<EValue>(ctx->expression(1)->accept(this));
 
     std::optional<GoIrBuilder::BinaryOperation> operation;
 
@@ -425,7 +425,7 @@ antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
 
   } else if (ctx->unary_op) {
     if (ctx->AMPERSAND()) {
-      EValue child = ctx->expression(0)->accept(this);
+      EValue child = std::any_cast<EValue>(ctx->expression(0)->accept(this));
       if (!child) return child;
 
       auto value = child->getPointerTo();
@@ -435,14 +435,14 @@ antlrcpp::Any ParserVisitor::visitExpression(GoParser::ExpressionContext *ctx) {
       return EValue(value);
     }
     if (ctx->STAR()) {
-      EValue child = ctx->expression(0)->accept(this);
+      EValue child = std::any_cast<EValue>(ctx->expression(0)->accept(this));
 
       return goIrBuilder->deref(child);
     }
   } else if (ctx->LOGICAL_AND() || ctx->LOGICAL_OR()) {
-    EValue left = ctx->expression(0)->accept(this);
+    EValue left = std::any_cast<EValue>(ctx->expression(0)->accept(this));
     auto rightBuilder = [this, ctx]() -> EValue {
-      return ctx->expression(1)->accept(this);
+      return std::any_cast<EValue>(ctx->expression(1)->accept(this));
     };
 
     if (ctx->LOGICAL_AND()) return goIrBuilder->createAnd(left, rightBuilder);
@@ -462,7 +462,7 @@ antlrcpp::Any ParserVisitor::visitShortVarDecl(GoParser::ShortVarDeclContext *ct
     if (name == "_") {
       continue;
     }
-    EValue expr = ctx->expressionList()->expression(i)->accept(this);
+    EValue expr = std::any_cast<EValue>(ctx->expressionList()->expression(i)->accept(this));
 
     auto mem = goIrBuilder->getNamed(name);
     if (!mem) {
@@ -477,7 +477,7 @@ antlrcpp::Any ParserVisitor::visitShortVarDecl(GoParser::ShortVarDeclContext *ct
 }
 
 antlrcpp::Any ParserVisitor::visitIfStmt(GoParser::IfStmtContext *ctx) {
-  EValue CondV = ctx->expression()->accept(this);
+  EValue CondV = std::any_cast<EValue>(ctx->expression()->accept(this));
   auto ifBlockBuilder = [this, ctx]() {
     ctx->block(0)->statementList()->accept(this);
   };
@@ -508,14 +508,14 @@ antlrcpp::Any ParserVisitor::visitForStmt(GoParser::ForStmtContext *ctx) {
       ctx->forClause()->children[0]->accept(this);
     };
     Cond = [this, ctx]() -> EValue {
-      return ctx->forClause()->children[2]->accept(this);
+      return std::any_cast<EValue>(ctx->forClause()->children[2]->accept(this));
     };
     After = [this, ctx]() {
       ctx->forClause()->children[4]->accept(this);
     };
   } else if (ctx->rangeClause()) {
     auto range = ctx->rangeClause();
-    EValue rExpr = range->expression()->accept(this);
+    EValue rExpr = std::any_cast<EValue>(range->expression()->accept(this));
     if (!rExpr) return rExpr;
 
     if (!rExpr->getType().getTypeDetails().intInfo) {
@@ -530,7 +530,7 @@ antlrcpp::Any ParserVisitor::visitForStmt(GoParser::ForStmtContext *ctx) {
         auto name = range->identifierList()->IDENTIFIER(0)->getText();
         goIrBuilder->addNamedValue(name, *lexpr);
       } else {
-        *lexpr = range->expressionList()->expression(0)->accept(this);
+        *lexpr = std::any_cast<EValue>(range->expressionList()->expression(0)->accept(this));
       }
       goIrBuilder->assign(*lexpr, initVal);
     };
@@ -544,7 +544,7 @@ antlrcpp::Any ParserVisitor::visitForStmt(GoParser::ForStmtContext *ctx) {
     };
   } else if (ctx->expression()) {
     Cond = [this, ctx]() -> EValue {
-      return ctx->expression()->accept(this);
+      return std::any_cast<EValue>(ctx->expression()->accept(this));
     };
   } else if (ctx->children.size() != 2) {
     return EValue(Error::Create("Unsupported for type", ctx));

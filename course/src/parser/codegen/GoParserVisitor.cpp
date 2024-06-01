@@ -1,6 +1,6 @@
 #include "GoParserBase.h"
 
-// Generated from GoParser.g4 by ANTLR 4.9
+// Generated from GoParser.g4 by ANTLR 4.10
 
 
 #include "GoParserVisitor.h"

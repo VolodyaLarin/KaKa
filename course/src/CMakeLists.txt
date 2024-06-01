@@ -7,7 +7,7 @@ find_package(LLVM REQUIRED CONFIG)
 
 include_directories(/usr/include/antlr4-runtime ./parser)
 
-link_libraries(antlr4-runtime LLVM)
+link_libraries(antlr4-runtime LLVM-18)
 
 add_executable(app
         main.cpp
